@@ -1,0 +1,94 @@
+# Environment Variables
+
+## Overview
+
+Settings are loaded by nested Pydantic settings in `app/core/config.py` using the `SECTION__FIELD=value` format.
+
+Example:
+
+```env
+APP__PORT=8000
+DATABASE__HOST=localhost
+STORAGE__ENDPOINT=localhost:9000
+```
+
+## App Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `APP__NAME` | API display name | `Lean Generator Backend` |
+| `APP__VERSION` | API version string | `0.1.0` |
+| `APP__DESCRIPTION` | OpenAPI description | `Template-driven backend for document generation.` |
+| `APP__ENVIRONMENT` | runtime mode | `development` |
+| `APP__DEBUG` | FastAPI debug flag | `false` |
+| `APP__HOST` | bind host | `0.0.0.0` |
+| `APP__PORT` | bind port | `8000` |
+| `APP__API_PREFIX` | versioned API prefix | `/api/v1` |
+| `APP__DOCS_URL` | Swagger path | `/docs` |
+| `APP__REDOC_URL` | ReDoc path | `/redoc` |
+| `APP__OPENAPI_URL` | OpenAPI JSON path | `/openapi.json` |
+| `APP__CORS_ORIGINS` | allowed frontend origins | `["http://localhost:5173"]` |
+
+## Database Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `DATABASE__HOST` | PostgreSQL host | `db` |
+| `DATABASE__PORT` | PostgreSQL port | `5432` |
+| `DATABASE__NAME` | database name | `lean_generator` |
+| `DATABASE__USER` | database user | `postgres` |
+| `DATABASE__PASSWORD` | database password | `postgres` |
+| `DATABASE__ECHO` | SQLAlchemy SQL echo | `false` |
+| `DATABASE__POOL_SIZE` | async engine pool size | `10` |
+| `DATABASE__MAX_OVERFLOW` | extra pooled connections | `20` |
+
+Derived value:
+
+- SQLAlchemy URL is built internally as `postgresql+asyncpg://...`
+
+## Storage Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `STORAGE__ENDPOINT` | MinIO or S3-compatible endpoint | `minio:9000` |
+| `STORAGE__ACCESS_KEY` | storage access key | `minioadmin` |
+| `STORAGE__SECRET_KEY` | storage secret key | `minioadmin` |
+| `STORAGE__BUCKET` | main object bucket | `documents` |
+| `STORAGE__SECURE` | use HTTPS | `false` |
+| `STORAGE__REGION` | optional storage region | empty |
+| `STORAGE__TEMPLATES_PREFIX` | template source prefix | `templates` |
+| `STORAGE__ARTIFACTS_PREFIX` | generated artifact prefix | `artifacts` |
+| `STORAGE__CACHE_PREFIX` | reusable artifact cache prefix | `cache` |
+| `STORAGE__PREVIEWS_PREFIX` | preview prefix | `previews` |
+| `STORAGE__PRESIGNED_URL_EXPIRY_SECONDS` | download URL TTL | `3600` |
+| `STORAGE__AUTO_CREATE_BUCKET` | auto-create bucket on startup | `true` |
+
+## Generation Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `GENERATION__CACHE_TTL_HOURS` | artifact cache reuse window | `24` |
+| `GENERATION__JOB_TIMEOUT_SECONDS` | logical generation timeout budget | `180` |
+| `GENERATION__MAX_UPLOAD_SIZE_MB` | max DOCX upload size | `25` |
+| `GENERATION__MAX_TEMPLATE_VARIABLES` | max variable bindings per request | `250` |
+| `GENERATION__MAX_DOCUMENT_BLOCKS` | max constructor blocks | `150` |
+| `GENERATION__MAX_TABLE_ROWS` | max rows in one constructor table | `500` |
+| `GENERATION__MAX_IMAGE_SIZE_MB` | max inline image size | `10` |
+| `GENERATION__MAX_ARTIFACTS_PER_JOB` | max stored files per job | `4` |
+| `GENERATION__PREVIEW_ENABLED` | preview artifact support toggle | `true` |
+
+## Recommended Files
+
+- `.env.example`: host-based local development
+- `.env.prod.example`: production-oriented example
+- `.env`: your local override file
+- `.env.prod`: your real production or prod-like Docker file
+
+## Frontend-Relevant Settings
+
+Frontend work usually only needs these values:
+
+- `APP__API_PREFIX`
+- `APP__CORS_ORIGINS`
+- the host/port where the backend is running
+- the MinIO-presigned URL behavior indirectly used by download endpoints

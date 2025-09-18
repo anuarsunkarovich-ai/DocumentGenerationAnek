@@ -1,0 +1,76 @@
+"""Document generation API routes."""
+
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, BackgroundTasks, Depends, status
+
+from app.api.controllers.document_controller import DocumentController
+from app.dtos.document import (
+    ConstructorSchemaResponse,
+    DocumentArtifactAccessResponse,
+    DocumentJobAccessQuery,
+    DocumentJobCreateRequest,
+    DocumentJobResponse,
+    DocumentJobStatusResponse,
+)
+from app.services.document_service import DocumentService
+
+router = APIRouter()
+
+
+@router.get("/constructor-schema", response_model=ConstructorSchemaResponse)
+async def get_constructor_schema() -> ConstructorSchemaResponse:
+    """Return the supported component-driven constructor schema."""
+    controller = DocumentController(service=DocumentService())
+    return await controller.get_constructor_schema()
+
+
+@router.get("/jobs/{task_id}", response_model=DocumentJobStatusResponse)
+async def get_document_job_status(
+    task_id: UUID,
+    query: Annotated[DocumentJobAccessQuery, Depends()],
+) -> DocumentJobStatusResponse:
+    """Return the current status and artifacts for a generation job."""
+    controller = DocumentController(service=DocumentService())
+    return await controller.get_job_status(
+        organization_id=query.organization_id,
+        job_id=task_id,
+    )
+
+
+@router.get("/jobs/{task_id}/download", response_model=DocumentArtifactAccessResponse)
+async def get_document_job_download(
+    task_id: UUID,
+    query: Annotated[DocumentJobAccessQuery, Depends()],
+) -> DocumentArtifactAccessResponse:
+    """Return the best downloadable artifact for a generation job."""
+    controller = DocumentController(service=DocumentService())
+    return await controller.get_download_artifact(
+        organization_id=query.organization_id,
+        job_id=task_id,
+    )
+
+
+@router.get("/jobs/{task_id}/preview", response_model=DocumentArtifactAccessResponse)
+async def get_document_job_preview(
+    task_id: UUID,
+    query: Annotated[DocumentJobAccessQuery, Depends()],
+) -> DocumentArtifactAccessResponse:
+    """Return the best preview artifact for a generation job."""
+    controller = DocumentController(service=DocumentService())
+    return await controller.get_preview_artifact(
+        organization_id=query.organization_id,
+        job_id=task_id,
+    )
+
+
+@router.post("/jobs", response_model=DocumentJobResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/generate", response_model=DocumentJobResponse, status_code=status.HTTP_202_ACCEPTED)
+async def create_document_job(
+    payload: DocumentJobCreateRequest,
+    background_tasks: BackgroundTasks,
+) -> DocumentJobResponse:
+    """Queue a new document generation job."""
+    controller = DocumentController(service=DocumentService())
+    return await controller.create_job(payload, background_tasks)
