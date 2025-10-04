@@ -10,6 +10,8 @@ from app.core.config import get_settings
 from app.core.database import database_manager
 from app.core.exceptions import (
     ApplicationError,
+    AuthenticationError,
+    AuthorizationError,
     ConflictError,
     NotFoundError,
     ValidationError,
@@ -73,6 +75,10 @@ async def application_error_handler(
         status_code = 409
     elif isinstance(error, ValidationError):
         status_code = 422
+    elif isinstance(error, AuthenticationError):
+        status_code = 401
+    elif isinstance(error, AuthorizationError):
+        status_code = 403
     else:
         status_code = 400
 

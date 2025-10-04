@@ -25,4 +25,5 @@ This folder is the working contract for the Lean Generator backend.
 1. Update docs in this folder in the same PR or commit as backend behavior changes.
 2. Treat `api-contract.md`, `templates.md`, and `constructor-schema.md` as frontend-facing contracts.
 3. Treat `environment.md` and `setup.md` as onboarding sources of truth.
-4. Do not leave route or payload changes documented only in chat or commit history.
+4. Record every backend-breaking change after the `v0.1` baseline in `CHANGELOG.md`.
+5. Do not leave route or payload changes documented only in chat or commit history.

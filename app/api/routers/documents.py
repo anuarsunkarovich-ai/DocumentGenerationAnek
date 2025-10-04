@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 
 from app.api.controllers.document_controller import DocumentController
+from app.api.dependencies.auth import CurrentMembership, get_current_membership
 from app.dtos.document import (
     ConstructorSchemaResponse,
     DocumentArtifactAccessResponse,
@@ -20,8 +21,11 @@ router = APIRouter()
 
 
 @router.get("/constructor-schema", response_model=ConstructorSchemaResponse)
-async def get_constructor_schema() -> ConstructorSchemaResponse:
+async def get_constructor_schema(
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
+) -> ConstructorSchemaResponse:
     """Return the supported component-driven constructor schema."""
+    _ = membership
     controller = DocumentController(service=DocumentService())
     return await controller.get_constructor_schema()
 
@@ -30,8 +34,10 @@ async def get_constructor_schema() -> ConstructorSchemaResponse:
 async def get_document_job_status(
     task_id: UUID,
     query: Annotated[DocumentJobAccessQuery, Depends()],
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
 ) -> DocumentJobStatusResponse:
     """Return the current status and artifacts for a generation job."""
+    membership.assert_organization_access(query.organization_id)
     controller = DocumentController(service=DocumentService())
     return await controller.get_job_status(
         organization_id=query.organization_id,
@@ -43,8 +49,10 @@ async def get_document_job_status(
 async def get_document_job_download(
     task_id: UUID,
     query: Annotated[DocumentJobAccessQuery, Depends()],
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
 ) -> DocumentArtifactAccessResponse:
     """Return the best downloadable artifact for a generation job."""
+    membership.assert_organization_access(query.organization_id)
     controller = DocumentController(service=DocumentService())
     return await controller.get_download_artifact(
         organization_id=query.organization_id,
@@ -56,8 +64,10 @@ async def get_document_job_download(
 async def get_document_job_preview(
     task_id: UUID,
     query: Annotated[DocumentJobAccessQuery, Depends()],
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
 ) -> DocumentArtifactAccessResponse:
     """Return the best preview artifact for a generation job."""
+    membership.assert_organization_access(query.organization_id)
     controller = DocumentController(service=DocumentService())
     return await controller.get_preview_artifact(
         organization_id=query.organization_id,
@@ -70,7 +80,13 @@ async def get_document_job_preview(
 async def create_document_job(
     payload: DocumentJobCreateRequest,
     background_tasks: BackgroundTasks,
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
 ) -> DocumentJobResponse:
     """Queue a new document generation job."""
+    membership.assert_organization_access(payload.organization_id)
     controller = DocumentController(service=DocumentService())
-    return await controller.create_job(payload, background_tasks)
+    return await controller.create_job(
+        payload,
+        background_tasks,
+        current_user_id=membership.user_id,
+    )

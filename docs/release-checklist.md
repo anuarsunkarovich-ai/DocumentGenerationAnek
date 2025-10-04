@@ -1,5 +1,15 @@
 # Release Checklist
 
+## Baseline Reference
+
+This checklist is the reference point for backend release baseline `v0.1` established on March 20, 2026.
+
+After this baseline:
+
+- keep the frontend-facing contract additions backward compatible where possible
+- document intentional contract changes in `docs/api-contract.md` and `docs/constructor-schema.md`
+- record every backend-breaking change in `CHANGELOG.md`
+
 Use this checklist before calling the backend "usable" for the first release.
 
 ## Current Status

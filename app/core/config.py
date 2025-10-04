@@ -110,6 +110,32 @@ class GenerationSettings(BaseModel):
         return self.max_image_size_mb * 1024 * 1024
 
 
+class AuthSettings(BaseModel):
+    """Authentication and token settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    jwt_secret_key: str = "change-this-in-production-32-byte-key"
+    jwt_algorithm: str = "HS256"
+    issuer: str = "lean-generator-backend"
+    audience: str = "lean-generator-clients"
+    access_token_ttl_minutes: int = 15
+    refresh_token_ttl_days: int = 30
+    password_min_length: int = 8
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def access_token_ttl_seconds(self) -> int:
+        """Return the access-token lifetime in seconds."""
+        return self.access_token_ttl_minutes * 60
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def refresh_token_ttl_seconds(self) -> int:
+        """Return the refresh-token lifetime in seconds."""
+        return self.refresh_token_ttl_days * 24 * 60 * 60
+
+
 class PathsSettings(BaseModel):
     """Local filesystem paths used by the application."""
 
@@ -135,6 +161,7 @@ class Settings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     generation: GenerationSettings = Field(default_factory=GenerationSettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     paths: PathsSettings = Field(default_factory=PathsSettings)
 
 

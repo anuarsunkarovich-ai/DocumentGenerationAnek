@@ -13,11 +13,12 @@ pytestmark = pytest.mark.integration
 
 
 def test_generate_endpoint_returns_task_id(
-    client: TestClient,
+    authenticated_client: TestClient,
+    authenticated_membership,
     monkeypatch,
 ) -> None:
     """Ensure the generate route accepts a valid payload and returns a task id."""
-    organization_id = uuid4()
+    organization_id = authenticated_membership.organization_id
     template_id = uuid4()
     task_id = uuid4()
 
@@ -25,11 +26,14 @@ def test_generate_endpoint_returns_task_id(
         self: DocumentService,
         payload: DocumentJobCreateRequest,
         background_tasks: BackgroundTasks,
+        *,
+        current_user_id,
     ) -> DocumentJobResponse:
         """Return a predictable queued job for the route integration test."""
         assert payload.organization_id == organization_id
         assert payload.template_id == template_id
         assert payload.data["student_name"] == "Anek"
+        assert current_user_id == authenticated_membership.user_id
         assert background_tasks is not None
         return DocumentJobResponse(
             task_id=task_id,
@@ -37,13 +41,13 @@ def test_generate_endpoint_returns_task_id(
             status="queued",
             template_id=payload.template_id,
             template_version_id=payload.template_version_id,
-            requested_by_user_id=payload.requested_by_user_id,
+            requested_by_user_id=current_user_id,
             from_cache=False,
         )
 
     monkeypatch.setattr(DocumentService, "create_job", fake_create_job)
 
-    response = client.post(
+    response = authenticated_client.post(
         "/api/v1/documents/generate",
         json={
             "organization_id": str(organization_id),

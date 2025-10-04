@@ -2,7 +2,9 @@
 
 from contextlib import asynccontextmanager
 from io import BytesIO
-from typing import Any, AsyncIterator, cast
+from types import SimpleNamespace
+from typing import Any, AsyncIterator, Generator, cast
+from uuid import uuid4
 from zipfile import ZipFile
 
 import pytest
@@ -10,7 +12,9 @@ from fastapi.testclient import TestClient
 
 import app.main as main_module
 import app.services.health_service as health_service_module
+from app.api.dependencies.auth import CurrentMembership, get_current_membership
 from app.main import app
+from app.models.enums import UserRole
 from app.services.storage.models import StorageObject
 
 
@@ -162,3 +166,36 @@ def build_docx_fixture(*document_text: str) -> bytes:
 def client() -> TestClient:
     """Provide a shared synchronous API client."""
     return create_test_client()
+
+
+@pytest.fixture
+def authenticated_membership() -> CurrentMembership:
+    """Provide a stable authenticated membership for protected-route tests."""
+    organization_id = uuid4()
+    user = SimpleNamespace(
+        id=uuid4(),
+        organization_id=organization_id,
+        email="anek@example.com",
+        full_name="Anek",
+        role=UserRole.ADMIN,
+        is_active=True,
+        organization=SimpleNamespace(
+            id=organization_id,
+            name="Math Department",
+            code="math-dept",
+            is_active=True,
+        ),
+    )
+    return CurrentMembership(user=cast(Any, user))
+
+
+@pytest.fixture
+def authenticated_client(
+    authenticated_membership: CurrentMembership,
+) -> Generator[TestClient, None, None]:
+    """Provide a client with auth dependencies overridden."""
+    app.dependency_overrides[get_current_membership] = lambda: authenticated_membership
+    try:
+        yield create_test_client()
+    finally:
+        app.dependency_overrides.clear()

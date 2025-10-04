@@ -40,6 +40,8 @@ class DocumentService:
         self,
         payload: DocumentJobCreateRequest,
         background_tasks: BackgroundTasks,
+        *,
+        current_user_id: UUID,
     ) -> DocumentJobResponse:
         """Queue a document job and return the task metadata immediately."""
         async with get_transaction_session() as session:
@@ -63,7 +65,7 @@ class DocumentService:
                     organization_id=context.organization_id,
                     template_id=context.template_id,
                     template_version_id=context.template_version_id,
-                    requested_by_user_id=payload.requested_by_user_id,
+                    requested_by_user_id=current_user_id,
                     status=DocumentJobStatus.QUEUED,
                     input_payload=payload.model_dump(mode="json"),
                     normalized_payload=normalized_payload,
@@ -72,7 +74,7 @@ class DocumentService:
             )
             await audit_service.log_event(
                 organization_id=job.organization_id,
-                user_id=job.requested_by_user_id,
+                user_id=current_user_id,
                 action=AuditAction.DOCUMENT_JOB_CREATED,
                 entity_type="document_job",
                 entity_id=job.id,
@@ -97,7 +99,7 @@ class DocumentService:
                     await artifact_service.reuse_cached_artifacts(
                         organization_code=context.organization_code,
                         job_id=job.id,
-                        user_id=job.requested_by_user_id,
+                        user_id=current_user_id,
                         artifacts=cached_artifacts,
                     )
                     await repository.mark_processing(
@@ -108,7 +110,7 @@ class DocumentService:
                     await repository.mark_completed(job)
                     await audit_service.log_event(
                         organization_id=job.organization_id,
-                        user_id=job.requested_by_user_id,
+                        user_id=current_user_id,
                         action=AuditAction.DOCUMENT_JOB_COMPLETED,
                         entity_type="document_job",
                         entity_id=job.id,
@@ -125,7 +127,7 @@ class DocumentService:
                         status=job.status.value,
                         template_id=job.template_id,
                         template_version_id=job.template_version_id,
-                        requested_by_user_id=job.requested_by_user_id,
+                        requested_by_user_id=current_user_id,
                         from_cache=True,
                     )
 
@@ -136,7 +138,7 @@ class DocumentService:
             status=job.status.value,
             template_id=job.template_id,
             template_version_id=job.template_version_id,
-            requested_by_user_id=job.requested_by_user_id,
+            requested_by_user_id=current_user_id,
             from_cache=False,
         )
 

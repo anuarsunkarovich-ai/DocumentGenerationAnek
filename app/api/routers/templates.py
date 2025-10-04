@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 
 from app.api.controllers.template_controller import TemplateController
+from app.api.dependencies.auth import CurrentMembership, get_current_membership
 from app.dtos.template import (
     TemplateAccessQuery,
     TemplateDetailResponse,
@@ -29,7 +30,6 @@ def build_template_upload_request(
     version: Annotated[str, Form(...)],
     description: Annotated[str | None, Form()] = None,
     notes: Annotated[str | None, Form()] = None,
-    created_by_user_id: Annotated[UUID | None, Form()] = None,
     publish: Annotated[bool, Form()] = True,
 ) -> TemplateUploadRequest:
     """Build a validated DTO from multipart form fields."""
@@ -40,7 +40,6 @@ def build_template_upload_request(
         version=version,
         description=description,
         notes=notes,
-        created_by_user_id=created_by_user_id,
         publish=publish,
     )
 
@@ -48,8 +47,10 @@ def build_template_upload_request(
 @router.get("", response_model=TemplateListResponse)
 async def list_templates(
     query: Annotated[TemplateListQuery, Depends()],
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
 ) -> TemplateListResponse:
     """Return all templates visible to the selected tenant."""
+    membership.assert_organization_access(query.organization_id)
     controller = TemplateController(service=TemplateService())
     return await controller.list_templates(organization_id=query.organization_id)
 
@@ -61,9 +62,11 @@ async def list_templates(
 )
 async def upload_template(
     payload: Annotated[TemplateUploadRequest, Depends(build_template_upload_request)],
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
     file: UploadFile = File(...),
 ) -> TemplateIngestionResponse:
     """Upload a DOCX template, extract its schema, and persist it."""
+    membership.assert_organization_access(payload.organization_id)
     controller = TemplateController(service=TemplateService())
     return await controller.upload_template(
         organization_id=payload.organization_id,
@@ -73,7 +76,7 @@ async def upload_template(
         file=file,
         description=payload.description,
         notes=payload.notes,
-        created_by_user_id=payload.created_by_user_id,
+        current_user_id=membership.user_id,
         publish=payload.publish,
     )
 
@@ -83,10 +86,17 @@ async def upload_template(
     response_model=TemplateIngestionResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def register_template(payload: TemplateRegisterRequest) -> TemplateIngestionResponse:
+async def register_template(
+    payload: TemplateRegisterRequest,
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
+) -> TemplateIngestionResponse:
     """Register a DOCX template that already exists in storage."""
+    membership.assert_organization_access(payload.organization_id)
     controller = TemplateController(service=TemplateService())
-    return await controller.register_template(payload)
+    return await controller.register_template(
+        payload,
+        current_user_id=membership.user_id,
+    )
 
 
 @router.post(
@@ -94,8 +104,12 @@ async def register_template(payload: TemplateRegisterRequest) -> TemplateIngesti
     response_model=TemplateSchemaResponse,
     status_code=status.HTTP_200_OK,
 )
-async def extract_template_schema(file: UploadFile = File(...)) -> TemplateSchemaResponse:
+async def extract_template_schema(
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
+    file: UploadFile = File(...),
+) -> TemplateSchemaResponse:
     """Extract a normalized frontend schema without persisting a template."""
+    _ = membership
     controller = TemplateController(service=TemplateService())
     return await controller.extract_schema_from_upload(file)
 
@@ -104,8 +118,10 @@ async def extract_template_schema(file: UploadFile = File(...)) -> TemplateSchem
 async def get_template(
     template_id: UUID,
     query: Annotated[TemplateAccessQuery, Depends()],
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
 ) -> TemplateDetailResponse:
     """Return one template with its current version details."""
+    membership.assert_organization_access(query.organization_id)
     controller = TemplateController(service=TemplateService())
     return await controller.get_template(
         organization_id=query.organization_id,
@@ -121,8 +137,10 @@ async def get_template(
 async def extract_stored_template_schema(
     template_id: UUID,
     query: Annotated[TemplateAccessQuery, Depends()],
+    membership: Annotated[CurrentMembership, Depends(get_current_membership)],
 ) -> TemplateSchemaExtractionResponse:
     """Re-extract schema from the current stored template version."""
+    membership.assert_organization_access(query.organization_id)
     controller = TemplateController(service=TemplateService())
     return await controller.extract_schema_for_template(
         organization_id=query.organization_id,

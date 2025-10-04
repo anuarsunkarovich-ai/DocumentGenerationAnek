@@ -123,7 +123,7 @@ class TemplateService:
         file: UploadFile,
         description: str | None = None,
         notes: str | None = None,
-        created_by_user_id: UUID | None = None,
+        current_user_id: UUID,
         publish: bool = True,
     ) -> TemplateIngestionResponse:
         """Upload, parse, store, and register a DOCX template."""
@@ -178,7 +178,7 @@ class TemplateService:
                 template_version = await version_repository.create(
                     TemplateVersion(
                         template_id=template.id,
-                        created_by_user_id=created_by_user_id,
+                        created_by_user_id=current_user_id,
                         version=version,
                         original_filename=safe_file_name,
                         storage_key=storage_object.key,
@@ -204,7 +204,10 @@ class TemplateService:
         )
 
     async def register_template(
-        self, payload: TemplateRegisterRequest
+        self,
+        payload: TemplateRegisterRequest,
+        *,
+        current_user_id: UUID,
     ) -> TemplateIngestionResponse:
         """Register a template version from an already stored DOCX file."""
         async with get_transaction_session() as session:
@@ -248,7 +251,7 @@ class TemplateService:
             template_version = await version_repository.create(
                 TemplateVersion(
                     template_id=template.id,
-                    created_by_user_id=payload.created_by_user_id,
+                    created_by_user_id=current_user_id,
                     version=payload.version,
                     original_filename=safe_file_name,
                     storage_key=safe_storage_key,

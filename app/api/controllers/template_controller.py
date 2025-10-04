@@ -62,7 +62,7 @@ class TemplateController:
         file: UploadFile,
         description: str | None = None,
         notes: str | None = None,
-        created_by_user_id: UUID | None = None,
+        current_user_id: UUID,
         publish: bool = True,
     ) -> TemplateIngestionResponse:
         """Upload and register a DOCX template."""
@@ -74,16 +74,18 @@ class TemplateController:
             file=file,
             description=description,
             notes=notes,
-            created_by_user_id=created_by_user_id,
+            current_user_id=current_user_id,
             publish=publish,
         )
 
     async def register_template(
         self,
         payload: TemplateRegisterRequest,
+        *,
+        current_user_id: UUID,
     ) -> TemplateIngestionResponse:
         """Register a DOCX template from existing storage."""
-        return await self._service.register_template(payload)
+        return await self._service.register_template(payload, current_user_id=current_user_id)
 
     async def extract_schema_from_upload(self, file: UploadFile) -> TemplateSchemaResponse:
         """Extract a normalized schema from a DOCX upload."""

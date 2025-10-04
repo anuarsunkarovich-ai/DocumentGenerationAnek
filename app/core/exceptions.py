@@ -15,3 +15,11 @@ class ConflictError(ApplicationError):
 
 class ValidationError(ApplicationError):
     """Raised when a request violates a business rule."""
+
+
+class AuthenticationError(ApplicationError):
+    """Raised when a request is missing valid authentication."""
+
+
+class AuthorizationError(ApplicationError):
+    """Raised when an authenticated user lacks access to a resource."""

@@ -112,7 +112,6 @@ class TemplateUploadRequest(BaseDTO):
     version: str = Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
     description: str | None = Field(default=None, max_length=2000)
     notes: str | None = Field(default=None, max_length=2000)
-    created_by_user_id: UUID | None = None
     publish: bool = True
 
     @field_validator("name", "code", "version")
@@ -158,7 +157,6 @@ class TemplateRegisterRequest(BaseDTO):
     original_filename: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
     notes: str | None = Field(default=None, max_length=2000)
-    created_by_user_id: UUID | None = None
     publish: bool = True
 
     @field_validator("name", "code", "version", "original_filename")

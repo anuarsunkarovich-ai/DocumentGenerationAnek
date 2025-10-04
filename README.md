@@ -14,6 +14,7 @@ Backend documentation now lives under [docs/README.md](/C:/Users/Anek/DocumentGe
 - [Constructor Block Schema](/C:/Users/Anek/DocumentGenerationAnek/docs/constructor-schema.md)
 - [Generation Lifecycle](/C:/Users/Anek/DocumentGenerationAnek/docs/generation-lifecycle.md)
 - [Release Checklist](/C:/Users/Anek/DocumentGenerationAnek/docs/release-checklist.md)
+- [Changelog](/C:/Users/Anek/DocumentGenerationAnek/CHANGELOG.md)
 
 ## Quick Start
 
@@ -60,6 +61,8 @@ The repository now includes a lightweight quality gate stack:
 
 The integration suite currently covers template schema extraction and document job creation at the API layer, which gives the frontend-facing contract a basic safety net.
 
+The `v0.1` backend release baseline is anchored by [docs/release-checklist.md](/C:/Users/Anek/DocumentGenerationAnek/docs/release-checklist.md), and all backend-breaking changes after that point must be recorded in [CHANGELOG.md](/C:/Users/Anek/DocumentGenerationAnek/CHANGELOG.md).
+
 ## Environment Files
 
 - [.env.example](/C:/Users/Anek/DocumentGenerationAnek/.env.example): local development defaults for running the app on the host machine
@@ -92,6 +95,7 @@ Production profile:
 - Fixed FastAPI package structure under `app/`
 - Clear separation between routers, controllers, services, DTOs, models, and repositories
 - Minimal starter endpoints for health, templates, and document jobs
+- Internal JWT auth with hashed passwords and revocable refresh sessions
 
 ## Configuration
 
@@ -164,6 +168,8 @@ Document jobs now follow a real lifecycle and are executed in the background:
 - `GET /api/v1/documents/jobs/{task_id}/preview?organization_id=...`: returns the preferred preview artifact plus a presigned URL
 
 The current implementation uses FastAPI background execution behind a service boundary, so it can be swapped for Celery later without changing the API contract. When the template version and normalized payload hash match a recent completed job, the backend reuses cached artifacts instead of regenerating the document.
+
+All template and document routes are protected by bearer auth. The backend now derives actor fields such as `requested_by_user_id` and `created_by_user_id` from the authenticated user instead of trusting client input.
 
 ## Multi-Tenancy
 

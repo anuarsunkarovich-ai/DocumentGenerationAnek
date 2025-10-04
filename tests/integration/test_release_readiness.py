@@ -60,7 +60,6 @@ def build_job(context: ResolvedTemplateContext) -> SimpleNamespace:
             "organization_id": str(context.organization_id),
             "template_id": str(context.template_id),
             "template_version_id": str(context.template_version_id),
-            "requested_by_user_id": str(uuid4()),
             "data": {
                 "student_name": "Anek",
                 "signer_name": "Dean Office",
@@ -402,7 +401,6 @@ async def test_cached_generation_returns_cached_download_and_audit_logs(monkeypa
             "organization_id": str(context.organization_id),
             "template_id": str(context.template_id),
             "template_version_id": str(context.template_version_id),
-            "requested_by_user_id": str(uuid4()),
             "data": {"student_name": "Anek", "signer_name": "Dean Office"},
             "constructor": {
                 "blocks": [
@@ -416,7 +414,7 @@ async def test_cached_generation_returns_cached_download_and_audit_logs(monkeypa
         }
     )
 
-    response = await service.create_job(payload, BackgroundTasks())
+    response = await service.create_job(payload, BackgroundTasks(), current_user_id=uuid4())
     download = await service.get_download_artifact(
         organization_id=context.organization_id,
         job_id=response.task_id,

@@ -77,6 +77,18 @@ Derived value:
 | `GENERATION__MAX_ARTIFACTS_PER_JOB` | max stored files per job | `4` |
 | `GENERATION__PREVIEW_ENABLED` | preview artifact support toggle | `true` |
 
+## Auth Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `AUTH__JWT_SECRET_KEY` | HMAC secret for JWT signing | `change-this-in-production-32-byte-key` |
+| `AUTH__JWT_ALGORITHM` | JWT signing algorithm | `HS256` |
+| `AUTH__ISSUER` | expected JWT issuer | `lean-generator-backend` |
+| `AUTH__AUDIENCE` | expected JWT audience | `lean-generator-clients` |
+| `AUTH__ACCESS_TOKEN_TTL_MINUTES` | access token lifetime | `15` |
+| `AUTH__REFRESH_TOKEN_TTL_DAYS` | refresh token lifetime | `30` |
+| `AUTH__PASSWORD_MIN_LENGTH` | minimum password length for internal auth flows | `8` |
+
 ## Recommended Files
 
 - `.env.example`: host-based local development
@@ -90,5 +102,6 @@ Frontend work usually only needs these values:
 
 - `APP__API_PREFIX`
 - `APP__CORS_ORIGINS`
+- auth token storage and refresh behavior derived from `AUTH__ACCESS_TOKEN_TTL_MINUTES` and `AUTH__REFRESH_TOKEN_TTL_DAYS`
 - the host/port where the backend is running
 - the MinIO-presigned URL behavior indirectly used by download endpoints

@@ -8,9 +8,11 @@ from tests.conftest import build_docx_fixture
 pytestmark = pytest.mark.integration
 
 
-def test_extract_schema_endpoint_returns_normalized_schema(client: TestClient) -> None:
+def test_extract_schema_endpoint_returns_normalized_schema(
+    authenticated_client: TestClient,
+) -> None:
     """Ensure the template schema extraction route parses DOCX uploads end to end."""
-    response = client.post(
+    response = authenticated_client.post(
         "/api/v1/templates/extract-schema",
         files={
             "file": (

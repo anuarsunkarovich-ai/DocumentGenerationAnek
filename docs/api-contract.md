@@ -6,6 +6,22 @@
 - JSON requests and responses use Pydantic DTOs with strict validation
 - tenant-sensitive routes require `organization_id`
 - document generation is asynchronous
+- all template and document routes require `Authorization: Bearer <access_token>`
+- actor identifiers on protected routes are derived from the authenticated user, not trusted from client input
+
+## Release Baseline
+
+- Backend release baseline: `v0.1`
+- Baseline date: March 20, 2026
+- Baseline reference point: `docs/release-checklist.md`
+- Locked contracts at this baseline:
+  - `POST /api/v1/templates/extract-schema`
+  - `GET /api/v1/documents/constructor-schema`
+  - `POST /api/v1/documents/generate`
+  - `POST /api/v1/documents/jobs`
+  - `GET /api/v1/documents/jobs/{task_id}`
+- These endpoints do not currently emit a top-level release version field. Their shipped contract version is tracked in this document, enforced by tests, and recorded in `CHANGELOG.md`.
+- Breaking any of these shapes requires a coordinated frontend change and a `CHANGELOG.md` entry.
 
 ## Health
 
@@ -25,6 +41,58 @@ Response:
 ### `GET /api/v1/health`
 
 Versioned health route for application clients.
+
+## Authentication
+
+### `POST /api/v1/auth/login`
+
+Authenticate with internal email/password credentials.
+
+Request body:
+
+```json
+{
+  "email": "anek@example.com",
+  "password": "correct-password"
+}
+```
+
+Response:
+
+```json
+{
+  "access_token": "jwt",
+  "refresh_token": "opaque-token",
+  "token_type": "bearer",
+  "access_token_expires_in": 900,
+  "refresh_token_expires_in": 2592000,
+  "user": {
+    "id": "uuid",
+    "organization_id": "uuid",
+    "email": "anek@example.com",
+    "full_name": "Anek",
+    "role": "admin",
+    "is_active": true,
+    "organization": {
+      "id": "uuid",
+      "name": "Math Department",
+      "code": "math-dept"
+    }
+  }
+}
+```
+
+### `POST /api/v1/auth/refresh`
+
+Rotate a refresh token and return a fresh access/refresh pair.
+
+### `POST /api/v1/auth/logout`
+
+Protected route. Revokes the supplied refresh token for the authenticated user.
+
+### `GET /api/v1/auth/me`
+
+Protected route. Returns the authenticated user profile and organization summary.
 
 ## Templates
 
@@ -68,6 +136,8 @@ Response adds:
 ### `POST /api/v1/templates/extract-schema`
 
 Multipart upload route for schema extraction without persistence.
+
+Contract version: `v0.1`
 
 Form fields:
 
@@ -115,9 +185,10 @@ Form fields:
 - `version`
 - `description` optional
 - `notes` optional
-- `created_by_user_id` optional
 - `publish` optional
 - `file`
+
+The backend derives `created_by_user_id` from the access token.
 
 ### `POST /api/v1/templates/register`
 
@@ -135,10 +206,11 @@ JSON body:
   "original_filename": "certificate.docx",
   "description": "Optional text",
   "notes": "Optional text",
-  "created_by_user_id": "uuid",
   "publish": true
 }
 ```
+
+The backend derives `created_by_user_id` from the access token.
 
 ### `POST /api/v1/templates/{template_id}/extract-schema?organization_id=<uuid>`
 
@@ -148,19 +220,62 @@ Re-extract schema from the currently stored template version and persist the upd
 
 ### `GET /api/v1/documents/constructor-schema`
 
+Contract version: `v0.1`
+
 Returns:
 
-- `schema_version`
-- `default_formatting`
-- supported block type names
+```json
+{
+  "descriptor": {
+    "schema_version": "1.0",
+    "default_formatting": {
+      "page": {
+        "profile": "gost_r_7_0_97_2016",
+        "paper_size": "A4",
+        "orientation": "portrait",
+        "margin_left_mm": 30.0,
+        "margin_right_mm": 10.0,
+        "margin_top_mm": 20.0,
+        "margin_bottom_mm": 20.0,
+        "header_distance_mm": 12.5,
+        "footer_distance_mm": 12.5
+      },
+      "typography": {
+        "font_family": "Times New Roman",
+        "font_size_pt": 14.0,
+        "line_spacing": 1.5,
+        "first_line_indent_mm": 12.5,
+        "paragraph_spacing_before_pt": 0.0,
+        "paragraph_spacing_after_pt": 0.0,
+        "alignment": "justify"
+      },
+      "allow_orphan_headings": false,
+      "repeat_table_header_on_each_page": true,
+      "force_table_borders": true,
+      "signatures_align_right": true
+    },
+    "supported_blocks": [
+      "text",
+      "table",
+      "image",
+      "header",
+      "signature",
+      "page_break",
+      "spacer"
+    ]
+  }
+}
+```
 
-Use this route to initialize frontend defaults instead of hardcoding them in UI code.
+Use `descriptor.schema_version` as the constructor model version and use this route to initialize frontend defaults instead of hardcoding them in UI code.
 
 ## Document Generation
 
 ### `POST /api/v1/documents/generate`
 
 Alias of `POST /api/v1/documents/jobs`.
+
+Contract version: `v0.1`
 
 Request body:
 
@@ -169,7 +284,6 @@ Request body:
   "organization_id": "uuid",
   "template_id": "uuid",
   "template_version_id": "uuid",
-  "requested_by_user_id": "uuid",
   "data": {
     "student_name": "Anek"
   },
@@ -191,6 +305,8 @@ Request body:
 }
 ```
 
+The backend derives `requested_by_user_id` from the access token and returns it in job responses.
+
 Immediate response:
 
 ```json
@@ -208,6 +324,8 @@ Immediate response:
 ### `GET /api/v1/documents/jobs/{task_id}?organization_id=<uuid>`
 
 Polling route for job status.
+
+Contract version: `v0.1`
 
 Response:
 

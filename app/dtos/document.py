@@ -20,7 +20,6 @@ class DocumentJobCreateRequest(BaseDTO):
     organization_id: UUID
     template_id: UUID
     template_version_id: UUID | None = None
-    requested_by_user_id: UUID | None = None
     data: dict[str, Any] = Field(default_factory=dict)
     constructor: DocumentConstructor
 
