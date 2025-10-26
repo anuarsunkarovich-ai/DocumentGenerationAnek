@@ -20,8 +20,6 @@ class AccessTokenClaims:
     """Validated claims extracted from an access token."""
 
     user_id: UUID
-    organization_id: UUID
-    role: str
 
 
 def hash_password(password: str) -> str:
@@ -40,8 +38,6 @@ def verify_password(password: str, password_hash: str) -> bool:
 def create_access_token(
     *,
     user_id: UUID,
-    organization_id: UUID,
-    role: str,
 ) -> str:
     """Create a signed JWT access token for one user session."""
     settings = get_settings()
@@ -49,8 +45,6 @@ def create_access_token(
     expires_at = issued_at + timedelta(minutes=settings.auth.access_token_ttl_minutes)
     payload = {
         "sub": str(user_id),
-        "organization_id": str(organization_id),
-        "role": role,
         "token_type": "access",
         "iss": settings.auth.issuer,
         "aud": settings.auth.audience,
@@ -86,8 +80,6 @@ def decode_access_token(token: str) -> AccessTokenClaims:
     try:
         return AccessTokenClaims(
             user_id=UUID(str(payload["sub"])),
-            organization_id=UUID(str(payload["organization_id"])),
-            role=str(payload["role"]),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise AuthenticationError("Access token is invalid.") from error

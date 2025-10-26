@@ -17,6 +17,7 @@ class Organization(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")
+    memberships: Mapped[list["OrganizationMembership"]] = relationship(back_populates="organization")
     templates: Mapped[list["Template"]] = relationship(back_populates="organization")
     document_jobs: Mapped[list["DocumentJob"]] = relationship(back_populates="organization")
     document_artifacts: Mapped[list["DocumentArtifact"]] = relationship(

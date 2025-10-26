@@ -7,6 +7,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.organization_membership import OrganizationMembership
 from app.models.user import User
 
 
@@ -21,7 +22,10 @@ class UserRepository:
         """Return one user by normalized email address."""
         statement: Select[tuple[User]] = (
             select(User)
-            .options(selectinload(User.organization))
+            .options(
+                selectinload(User.organization),
+                selectinload(User.memberships).selectinload(OrganizationMembership.organization),
+            )
             .where(User.email == email.lower().strip())
         )
         result = await self._session.execute(statement)
@@ -31,7 +35,10 @@ class UserRepository:
         """Return one user by identifier with organization loaded."""
         statement: Select[tuple[User]] = (
             select(User)
-            .options(selectinload(User.organization))
+            .options(
+                selectinload(User.organization),
+                selectinload(User.memberships).selectinload(OrganizationMembership.organization),
+            )
             .where(User.id == user_id)
         )
         result = await self._session.execute(statement)

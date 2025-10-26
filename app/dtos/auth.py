@@ -43,6 +43,17 @@ class AuthOrganizationResponse(BaseDTO):
     code: str
 
 
+class AuthMembershipResponse(BaseDTO):
+    """Public membership summary returned with authenticated users."""
+
+    id: UUID
+    organization_id: UUID
+    role: str
+    is_active: bool
+    is_default: bool
+    organization: AuthOrganizationResponse
+
+
 class AuthUserResponse(BaseDTO):
     """Public identity payload for the authenticated user."""
 
@@ -53,6 +64,7 @@ class AuthUserResponse(BaseDTO):
     role: str
     is_active: bool
     organization: AuthOrganizationResponse
+    memberships: list[AuthMembershipResponse] = Field(default_factory=list)
 
 
 class AuthTokenResponse(BaseDTO):

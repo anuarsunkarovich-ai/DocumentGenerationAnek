@@ -13,6 +13,7 @@ from app.core.database import get_transaction_session
 from app.core.exceptions import AuthenticationError, ValidationError
 from app.dtos.auth import (
     AuthLoginRequest,
+    AuthMembershipResponse,
     AuthOrganizationResponse,
     AuthTokenResponse,
     AuthUserResponse,
@@ -111,8 +112,6 @@ class AuthService:
         settings = get_settings()
         access_token = create_access_token(
             user_id=user.id,
-            organization_id=user.organization_id,
-            role=user.role.value,
         )
         return AuthTokenResponse(
             access_token=access_token,
@@ -124,27 +123,63 @@ class AuthService:
 
     def _serialize_user(self, user: User) -> AuthUserResponse:
         """Serialize one authenticated user and organization."""
-        organization = user.organization
+        default_membership = self._get_default_membership(user)
+        organization = default_membership.organization
         if organization is None:
-            raise AuthenticationError("User organization is not available.")
+            raise AuthenticationError("User default organization is not available.")
         return AuthUserResponse(
             id=user.id,
-            organization_id=user.organization_id,
+            organization_id=default_membership.organization_id,
             email=user.email,
             full_name=user.full_name,
-            role=user.role.value,
+            role=default_membership.role.value,
             is_active=user.is_active,
             organization=AuthOrganizationResponse(
                 id=organization.id,
                 name=organization.name,
                 code=organization.code,
             ),
+            memberships=[
+                AuthMembershipResponse(
+                    id=membership.id,
+                    organization_id=membership.organization_id,
+                    role=membership.role.value,
+                    is_active=membership.is_active,
+                    is_default=membership.is_default,
+                    organization=AuthOrganizationResponse(
+                        id=membership.organization.id,
+                        name=membership.organization.name,
+                        code=membership.organization.code,
+                    ),
+                )
+                for membership in self._get_active_memberships(user)
+            ],
         )
 
     def _ensure_user_can_authenticate(self, user: User | None) -> User:
         """Ensure the user and organization are active before issuing tokens."""
         if user is None or not user.is_active:
             raise AuthenticationError("Invalid email or password.")
-        if user.organization is None or not user.organization.is_active:
-            raise AuthenticationError("User organization is inactive.")
+        if not self._get_active_memberships(user):
+            raise AuthenticationError("User does not have an active organization membership.")
         return user
+
+    def _get_active_memberships(self, user: User) -> list:
+        """Return memberships that remain active and point to active organizations."""
+        return [
+            membership
+            for membership in user.memberships
+            if membership.is_active
+            and membership.organization is not None
+            and membership.organization.is_active
+        ]
+
+    def _get_default_membership(self, user: User):
+        """Return the default membership for the authenticated user."""
+        memberships = self._get_active_memberships(user)
+        default_membership = next((item for item in memberships if item.is_default), None)
+        if default_membership is not None:
+            return default_membership
+        if len(memberships) == 1:
+            return memberships[0]
+        raise AuthenticationError("User does not have a default organization membership.")

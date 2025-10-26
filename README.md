@@ -12,6 +12,7 @@ Backend documentation now lives under [docs/README.md](/C:/Users/Anek/DocumentGe
 - [API Contract For Frontend](/C:/Users/Anek/DocumentGenerationAnek/docs/api-contract.md)
 - [Template Format Rules](/C:/Users/Anek/DocumentGenerationAnek/docs/templates.md)
 - [Constructor Block Schema](/C:/Users/Anek/DocumentGenerationAnek/docs/constructor-schema.md)
+- [Authorization And Tenancy](/C:/Users/Anek/DocumentGenerationAnek/docs/authorization.md)
 - [Generation Lifecycle](/C:/Users/Anek/DocumentGenerationAnek/docs/generation-lifecycle.md)
 - [Release Checklist](/C:/Users/Anek/DocumentGenerationAnek/docs/release-checklist.md)
 - [Changelog](/C:/Users/Anek/DocumentGenerationAnek/CHANGELOG.md)
@@ -96,6 +97,7 @@ Production profile:
 - Clear separation between routers, controllers, services, DTOs, models, and repositories
 - Minimal starter endpoints for health, templates, and document jobs
 - Internal JWT auth with hashed passwords and revocable refresh sessions
+- Membership-based tenancy with role-driven authorization
 
 ## Configuration
 

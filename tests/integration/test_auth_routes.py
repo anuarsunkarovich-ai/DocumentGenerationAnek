@@ -88,6 +88,15 @@ def build_auth_state() -> dict[str, Any]:
         code="math-dept",
         is_active=True,
     )
+    membership = SimpleNamespace(
+        id=uuid4(),
+        user_id=None,
+        organization_id=organization_id,
+        role=UserRole.ADMIN,
+        is_active=True,
+        is_default=True,
+        organization=organization,
+    )
     user = SimpleNamespace(
         id=uuid4(),
         organization_id=organization_id,
@@ -98,9 +107,12 @@ def build_auth_state() -> dict[str, Any]:
         password_hash=hash_password("correct-password"),
         last_login_at=None,
         organization=organization,
+        memberships=[membership],
     )
+    membership.user_id = user.id
     return {
         "organization": organization,
+        "membership": membership,
         "user": user,
         "users_by_email": {user.email: user},
         "users_by_id": {user.id: user},
@@ -108,7 +120,7 @@ def build_auth_state() -> dict[str, Any]:
     }
 
 
-def build_expired_access_token(*, user_id, organization_id, role: str) -> str:
+def build_expired_access_token(*, user_id) -> str:
     """Build an expired JWT for negative token-validation tests."""
     settings = get_settings()
     issued_at = datetime.now(timezone.utc) - timedelta(minutes=30)
@@ -116,8 +128,6 @@ def build_expired_access_token(*, user_id, organization_id, role: str) -> str:
     return jwt.encode(
         {
             "sub": str(user_id),
-            "organization_id": str(organization_id),
-            "role": role,
             "token_type": "access",
             "iss": settings.auth.issuer,
             "aud": settings.auth.audience,
@@ -157,8 +167,6 @@ def test_me_rejects_expired_token(client: TestClient, monkeypatch) -> None:
     install_auth_test_doubles(monkeypatch, state)
     expired_token = build_expired_access_token(
         user_id=state["user"].id,
-        organization_id=state["organization"].id,
-        role=state["user"].role.value,
     )
 
     response = client.get(
@@ -184,6 +192,7 @@ def test_login_and_me_return_authenticated_user(client: TestClient, monkeypatch)
     payload = login_response.json()
     assert payload["token_type"] == "bearer"
     assert payload["user"]["email"] == "anek@example.com"
+    assert payload["user"]["memberships"][0]["organization"]["code"] == "math-dept"
     assert len(state["sessions"]) == 1
 
     me_response = client.get(

@@ -35,6 +35,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     organization: Mapped["Organization"] = relationship(back_populates="users")
     auth_sessions: Mapped[list["AuthSession"]] = relationship(back_populates="user")
+    memberships: Mapped[list["OrganizationMembership"]] = relationship(back_populates="user")
     template_versions: Mapped[list["TemplateVersion"]] = relationship(
         back_populates="created_by_user"
     )

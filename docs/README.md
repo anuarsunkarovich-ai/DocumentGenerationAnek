@@ -11,6 +11,7 @@ This folder is the working contract for the Lean Generator backend.
 - [API Contract For Frontend](api-contract.md)
 - [Template Format Rules](templates.md)
 - [Constructor Block Schema](constructor-schema.md)
+- [Authorization And Tenancy](authorization.md)
 - [Generation Lifecycle And Polling Flow](generation-lifecycle.md)
 - [Release Checklist](release-checklist.md)
 

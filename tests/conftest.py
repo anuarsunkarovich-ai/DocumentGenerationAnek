@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main_module
 import app.services.health_service as health_service_module
-from app.api.dependencies.auth import CurrentMembership, get_current_membership
+from app.api.dependencies.auth import CurrentMembership, get_current_membership, get_current_user
 from app.main import app
 from app.models.enums import UserRole
 from app.services.storage.models import StorageObject
@@ -172,6 +172,20 @@ def client() -> TestClient:
 def authenticated_membership() -> CurrentMembership:
     """Provide a stable authenticated membership for protected-route tests."""
     organization_id = uuid4()
+    organization = SimpleNamespace(
+        id=organization_id,
+        name="Math Department",
+        code="math-dept",
+        is_active=True,
+    )
+    membership = SimpleNamespace(
+        id=uuid4(),
+        organization_id=organization_id,
+        role=UserRole.ADMIN,
+        is_active=True,
+        is_default=True,
+        organization=organization,
+    )
     user = SimpleNamespace(
         id=uuid4(),
         organization_id=organization_id,
@@ -179,14 +193,13 @@ def authenticated_membership() -> CurrentMembership:
         full_name="Anek",
         role=UserRole.ADMIN,
         is_active=True,
-        organization=SimpleNamespace(
-            id=organization_id,
-            name="Math Department",
-            code="math-dept",
-            is_active=True,
-        ),
+        organization=organization,
+        memberships=[membership],
     )
-    return CurrentMembership(user=cast(Any, user))
+    return CurrentMembership(
+        user=cast(Any, user),
+        membership=cast(Any, membership),
+    )
 
 
 @pytest.fixture
@@ -194,6 +207,7 @@ def authenticated_client(
     authenticated_membership: CurrentMembership,
 ) -> Generator[TestClient, None, None]:
     """Provide a client with auth dependencies overridden."""
+    app.dependency_overrides[get_current_user] = lambda: authenticated_membership.user
     app.dependency_overrides[get_current_membership] = lambda: authenticated_membership
     try:
         yield create_test_client()

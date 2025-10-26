@@ -8,6 +8,7 @@
 - document generation is asynchronous
 - all template and document routes require `Authorization: Bearer <access_token>`
 - actor identifiers on protected routes are derived from the authenticated user, not trusted from client input
+- `organization_id` selections on protected routes are validated against active organization memberships
 
 ## Release Baseline
 
@@ -77,7 +78,21 @@ Response:
       "id": "uuid",
       "name": "Math Department",
       "code": "math-dept"
-    }
+    },
+    "memberships": [
+      {
+        "id": "uuid",
+        "organization_id": "uuid",
+        "role": "admin",
+        "is_active": true,
+        "is_default": true,
+        "organization": {
+          "id": "uuid",
+          "name": "Math Department",
+          "code": "math-dept"
+        }
+      }
+    ]
   }
 }
 ```
@@ -389,6 +404,7 @@ Typical statuses:
 ## Frontend Integration Notes
 
 1. Always preserve `organization_id` in list, detail, polling, download, and preview calls.
-2. Treat `task_id` as the stable polling identifier.
-3. Do not build storage URLs yourself; use the returned artifact URLs.
-4. Expect `from_cache=true` on very fast repeated generation runs.
+2. Treat the authenticated user's memberships as the source of truth for which organizations can be selected.
+3. Treat `task_id` as the stable polling identifier.
+4. Do not build storage URLs yourself; use the returned artifact URLs.
+5. Expect `from_cache=true` on very fast repeated generation runs.
