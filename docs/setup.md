@@ -7,12 +7,13 @@
 - Python 3.12
 - UV
 - PostgreSQL
+- Redis
 - MinIO or another S3-compatible storage service
 
 ### First Run
 
 1. Copy `.env.example` to `.env`
-2. Start PostgreSQL and MinIO locally
+2. Start PostgreSQL, Redis, and MinIO locally
 3. Install dependencies:
 
 ```bash
@@ -31,6 +32,12 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+6. Start the worker:
+
+```bash
+uv run celery -A app.workers.celery_app:celery_app worker --loglevel=info --pool=solo
+```
+
 ### Daily Commands
 
 ```bash
@@ -46,7 +53,7 @@ uv run python scripts/quality_gate.py
 ### Files
 
 - `Dockerfile`: multi-stage image with `dev` and `prod` targets
-- `docker-compose.yml`: local stack for API, PostgreSQL, MinIO, and bucket bootstrap
+- `docker-compose.yml`: local stack for API, Celery worker, Redis, PostgreSQL, MinIO, and bucket bootstrap
 - `docker/entrypoint.sh`: applies Alembic before app start
 
 ### Development Stack
@@ -58,6 +65,7 @@ docker compose up --build
 Services:
 
 - API: `http://localhost:8000`
+- Redis: `localhost:6379`
 - PostgreSQL: `localhost:5432`
 - MinIO API: `http://localhost:9000`
 - MinIO Console: `http://localhost:9001`
@@ -69,7 +77,7 @@ Services:
 3. Run:
 
 ```bash
-docker compose --profile prod up --build api-prod db minio minio-init
+docker compose --profile prod up --build api-prod worker-prod db redis minio minio-init
 ```
 
 ### Migration Behavior
@@ -89,6 +97,7 @@ before launching the server when `RUN_MIGRATIONS=true`.
 Check:
 
 - PostgreSQL connectivity
+- Redis connectivity
 - MinIO connectivity
 - bucket name and credentials
 

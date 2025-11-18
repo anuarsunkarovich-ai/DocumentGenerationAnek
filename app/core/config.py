@@ -82,6 +82,38 @@ class StorageSettings(BaseModel):
         return f"{scheme}://{self.endpoint}"
 
 
+class RedisSettings(BaseModel):
+    """Redis settings used by Celery broker and backend wiring."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = "redis"
+    port: int = 6379
+    broker_db: int = 0
+    result_db: int = 1
+    password: str | None = None
+
+    def _auth_segment(self) -> str:
+        """Return the auth prefix for Redis URLs."""
+        return f":{self.password}@" if self.password else ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def broker_url(self) -> str:
+        """Build the Celery broker URL."""
+        return (
+            f"redis://{self._auth_segment()}{self.host}:{self.port}/{self.broker_db}"
+        )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def result_backend_url(self) -> str:
+        """Build the Celery result backend URL."""
+        return (
+            f"redis://{self._auth_segment()}{self.host}:{self.port}/{self.result_db}"
+        )
+
+
 class GenerationSettings(BaseModel):
     """Generation-time limits and behavior settings."""
 
@@ -136,6 +168,19 @@ class AuthSettings(BaseModel):
         return self.refresh_token_ttl_days * 24 * 60 * 60
 
 
+class WorkerSettings(BaseModel):
+    """Celery worker behavior for generation jobs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    queue_name: str = "document-generation"
+    max_retries: int = 4
+    retry_backoff_seconds: int = 15
+    stale_job_timeout_seconds: int = 300
+    stale_job_recovery_batch_size: int = 100
+    result_expires_seconds: int = 3600
+
+
 class PathsSettings(BaseModel):
     """Local filesystem paths used by the application."""
 
@@ -160,8 +205,10 @@ class Settings(BaseSettings):
     app: AppSettings = Field(default_factory=AppSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
     generation: GenerationSettings = Field(default_factory=GenerationSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    worker: WorkerSettings = Field(default_factory=WorkerSettings)
     paths: PathsSettings = Field(default_factory=PathsSettings)
 
 

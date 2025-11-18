@@ -6,6 +6,7 @@
 - JSON requests and responses use Pydantic DTOs with strict validation
 - tenant-sensitive routes require `organization_id`
 - document generation is asynchronous
+- queued jobs are executed by Celery workers using Redis as the broker and result backend
 - all template and document routes require `Authorization: Bearer <access_token>`
 - actor identifiers on protected routes are derived from the authenticated user, not trusted from client input
 - `organization_id` selections on protected routes are validated against active organization memberships
@@ -335,6 +336,12 @@ Immediate response:
   "from_cache": false
 }
 ```
+
+Backend execution note:
+
+- the HTTP contract is unchanged by the worker move
+- API nodes now enqueue a Celery task and return immediately
+- workers recover stale `processing` jobs after restarts and retry transient failures with backoff
 
 ### `GET /api/v1/documents/jobs/{task_id}?organization_id=<uuid>`
 

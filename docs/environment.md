@@ -63,6 +63,16 @@ Derived value:
 | `STORAGE__PRESIGNED_URL_EXPIRY_SECONDS` | download URL TTL | `3600` |
 | `STORAGE__AUTO_CREATE_BUCKET` | auto-create bucket on startup | `true` |
 
+## Redis Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `REDIS__HOST` | Redis host for Celery | `redis` |
+| `REDIS__PORT` | Redis port | `6379` |
+| `REDIS__BROKER_DB` | Redis logical DB for Celery broker traffic | `0` |
+| `REDIS__RESULT_DB` | Redis logical DB for Celery result metadata | `1` |
+| `REDIS__PASSWORD` | optional Redis password | empty |
+
 ## Generation Settings
 
 | Variable | Meaning | Default |
@@ -89,6 +99,17 @@ Derived value:
 | `AUTH__REFRESH_TOKEN_TTL_DAYS` | refresh token lifetime | `30` |
 | `AUTH__PASSWORD_MIN_LENGTH` | minimum password length for internal auth flows | `8` |
 
+## Worker Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `WORKER__QUEUE_NAME` | Celery queue used for generation tasks | `document-generation` |
+| `WORKER__MAX_RETRIES` | max retries for transient generation failures | `4` |
+| `WORKER__RETRY_BACKOFF_SECONDS` | base delay for exponential backoff | `15` |
+| `WORKER__STALE_JOB_TIMEOUT_SECONDS` | age after which a `processing` job is considered stale | `300` |
+| `WORKER__STALE_JOB_RECOVERY_BATCH_SIZE` | max stale jobs recovered per scan | `100` |
+| `WORKER__RESULT_EXPIRES_SECONDS` | retention period for Celery result metadata | `3600` |
+
 ## Recommended Files
 
 - `.env.example`: host-based local development
@@ -103,5 +124,6 @@ Frontend work usually only needs these values:
 - `APP__API_PREFIX`
 - `APP__CORS_ORIGINS`
 - auth token storage and refresh behavior derived from `AUTH__ACCESS_TOKEN_TTL_MINUTES` and `AUTH__REFRESH_TOKEN_TTL_DAYS`
+- the Celery/Redis worker topology driven by `REDIS__*` and `WORKER__*`
 - the host/port where the backend is running
 - the MinIO-presigned URL behavior indirectly used by download endpoints

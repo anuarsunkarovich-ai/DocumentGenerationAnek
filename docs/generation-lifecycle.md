@@ -13,7 +13,7 @@
 2. Frontend sends `POST /api/v1/documents/generate`.
 3. Backend validates the request, resolves the template version, normalizes payload data, and creates a `DocumentJob`.
 4. Backend returns `task_id` immediately.
-5. Background processing generates DOCX and PDF artifacts.
+5. A Celery worker claims the queued job, then generates DOCX and PDF artifacts.
 6. Frontend polls `GET /api/v1/documents/jobs/{task_id}?organization_id=...`.
 7. When the job becomes `completed`, frontend uses `download` or `preview` endpoints.
 
@@ -60,6 +60,8 @@ If generation fails:
 - job status becomes `failed`
 - `error_message` is populated on the status route
 - audit logs record the failure
+- transient storage and connectivity failures are retried with exponential backoff before the job becomes `failed`
+- stale `processing` jobs are re-queued when workers restart
 
 Frontend should:
 
@@ -73,19 +75,21 @@ Frontend should:
 sequenceDiagram
     participant FE as Frontend
     participant API as FastAPI
-    participant BG as Background Generator
+    participant RQ as Redis
+    participant BG as Celery Worker
     participant DB as PostgreSQL
     participant S3 as MinIO
 
     FE->>API: POST /api/v1/documents/generate
     API->>DB: create queued DocumentJob
+    API->>RQ: enqueue document_jobs.process
     API-->>FE: 202 { task_id, status: queued }
-    API->>BG: schedule background processing
     loop Poll
         FE->>API: GET /api/v1/documents/jobs/{task_id}
         API->>DB: read job + artifacts
         API-->>FE: queued | processing | completed | failed
     end
+    BG->>RQ: consume queued task
     BG->>DB: mark processing
     BG->>S3: store docx/pdf
     BG->>DB: store artifacts + mark completed

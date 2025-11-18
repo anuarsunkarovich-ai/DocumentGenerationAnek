@@ -1,8 +1,18 @@
 """Orchestrate background document generation jobs."""
 
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+from app.core.config import get_settings
 from app.core.database import get_transaction_session
+from app.core.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+)
+from app.dtos.constructor import DocumentConstructor
 from app.models.enums import AuditAction
 from app.repositories.document_repository import DocumentRepository
 from app.services.audit_service import AuditService
@@ -12,6 +22,15 @@ from app.services.generation.pdf_render_service import PdfRenderService
 from app.services.generation.template_resolver_service import TemplateResolverService
 from app.services.generation.variable_mapper_service import VariableMapperService
 from app.services.storage import get_storage_service
+from app.services.storage.minio import StorageError
+
+
+class RetryableGenerationError(Exception):
+    """Raised when a job should be retried by the worker."""
+
+
+class PermanentGenerationError(Exception):
+    """Raised when a job has failed permanently."""
 
 
 class DocumentGenerationService:
@@ -23,16 +42,17 @@ class DocumentGenerationService:
         self._variable_mapper = VariableMapperService()
         self._composer = DocumentComposerService()
         self._pdf_renderer = PdfRenderService()
+        self._settings = get_settings()
 
-    async def process_job(self, job_id: UUID) -> None:
+    async def process_job(self, job_id: UUID) -> bool:
         """Process a queued job end to end in the background."""
         try:
+            context = None
             async with get_transaction_session() as session:
                 repository = DocumentRepository(session)
-                audit_service = AuditService(session)
                 job = await repository.get_by_id(job_id)
                 if job is None:
-                    return
+                    return False
 
                 resolver = TemplateResolverService(session)
                 context = await resolver.resolve(
@@ -43,8 +63,6 @@ class DocumentGenerationService:
                 constructor_payload = job.input_payload["constructor"]
                 data_payload = job.input_payload.get("data", {})
 
-                from app.dtos.constructor import DocumentConstructor
-
                 constructor = DocumentConstructor.model_validate(constructor_payload)
                 resolved_document, normalized_payload, cache_key = (
                     self._variable_mapper.map_document(
@@ -53,11 +71,17 @@ class DocumentGenerationService:
                         data=data_payload,
                     )
                 )
-                await repository.mark_processing(
-                    job,
+                stale_before = datetime.now(timezone.utc) - timedelta(
+                    seconds=self._settings.worker.stale_job_timeout_seconds
+                )
+                claimed_job = await repository.claim_for_processing(
+                    job_id=job.id,
                     normalized_payload=normalized_payload,
                     cache_key=cache_key,
+                    stale_before=stale_before,
                 )
+                if claimed_job is None:
+                    return False
 
             docx_bytes = self._composer.compose(resolved_document)
             pdf_bytes = self._pdf_renderer.render(resolved_document)
@@ -66,7 +90,7 @@ class DocumentGenerationService:
                 repository = DocumentRepository(session)
                 job = await repository.get_by_id(job_id)
                 if job is None:
-                    return
+                    return False
 
                 audit_service = AuditService(session)
                 artifact_service = ArtifactService(session, self._storage_service)
@@ -95,23 +119,68 @@ class DocumentGenerationService:
                         "from_cache": False,
                     },
                 )
+            return True
         except Exception as error:
-            async with get_transaction_session() as session:
-                repository = DocumentRepository(session)
-                audit_service = AuditService(session)
-                job = await repository.get_by_id(job_id)
-                if job is not None:
-                    await repository.mark_failed(job, str(error))
-                    await audit_service.log_event(
-                        organization_id=job.organization_id,
-                        user_id=job.requested_by_user_id,
-                        action=AuditAction.DOCUMENT_JOB_FAILED,
-                        entity_type="document_job",
-                        entity_id=job.id,
-                        payload={
-                            "template_id": str(job.template_id),
-                            "template_version_id": str(job.template_version_id),
-                            "error_message": str(error),
-                            "from_cache": False,
-                        },
-                    )
+            if self._is_retryable_error(error):
+                await self._requeue_job(job_id, str(error))
+                raise RetryableGenerationError(str(error)) from error
+            await self._mark_failed_job(job_id, str(error))
+            raise PermanentGenerationError(str(error)) from error
+
+    async def recover_stale_jobs(self) -> list[UUID]:
+        """Reset stale processing jobs back to queued so workers can pick them up again."""
+        stale_before = datetime.now(timezone.utc) - timedelta(
+            seconds=self._settings.worker.stale_job_timeout_seconds
+        )
+        async with get_transaction_session() as session:
+            repository = DocumentRepository(session)
+            return await repository.recover_stale_processing_jobs(
+                stale_before=stale_before,
+                limit=self._settings.worker.stale_job_recovery_batch_size,
+            )
+
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """Return whether a generation failure is likely transient."""
+        if isinstance(
+            error,
+            (
+                AuthenticationError,
+                AuthorizationError,
+                ConflictError,
+                NotFoundError,
+                ValidationError,
+                PermanentGenerationError,
+            ),
+        ):
+            return False
+        return isinstance(error, (StorageError, TimeoutError, ConnectionError, OSError))
+
+    async def _requeue_job(self, job_id: UUID, error_message: str) -> None:
+        """Move a transiently failed job back to queued."""
+        async with get_transaction_session() as session:
+            repository = DocumentRepository(session)
+            job = await repository.get_by_id(job_id)
+            if job is not None:
+                await repository.requeue(job, error_message=error_message)
+
+    async def _mark_failed_job(self, job_id: UUID, error_message: str) -> None:
+        """Persist a permanent job failure and write the audit log."""
+        async with get_transaction_session() as session:
+            repository = DocumentRepository(session)
+            audit_service = AuditService(session)
+            job = await repository.get_by_id(job_id)
+            if job is not None:
+                await repository.mark_failed(job, error_message)
+                await audit_service.log_event(
+                    organization_id=job.organization_id,
+                    user_id=job.requested_by_user_id,
+                    action=AuditAction.DOCUMENT_JOB_FAILED,
+                    entity_type="document_job",
+                    entity_id=job.id,
+                    payload={
+                        "template_id": str(job.template_id),
+                        "template_version_id": str(job.template_version_id),
+                        "error_message": error_message,
+                        "from_cache": False,
+                    },
+                )

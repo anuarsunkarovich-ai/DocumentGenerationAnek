@@ -19,21 +19,22 @@ Backend documentation now lives under [docs/README.md](/C:/Users/Anek/DocumentGe
 
 ## Quick Start
 
-For a full local backend stack with PostgreSQL and MinIO:
+For a full local backend stack with PostgreSQL, Redis, MinIO, and a Celery worker:
 
 ```bash
 docker compose up --build
 ```
 
-The API will be available at `http://localhost:8000`, MinIO at `http://localhost:9001`, and PostgreSQL at `localhost:5432`.
+The API will be available at `http://localhost:8000`, MinIO at `http://localhost:9001`, PostgreSQL at `localhost:5432`, and Redis at `localhost:6379`.
 
 For local development without Docker:
 
 1. Copy `.env.example` to `.env`
-2. Start PostgreSQL and MinIO locally
+2. Start PostgreSQL, Redis, and MinIO locally
 3. Run `uv sync --dev`
 4. Run `uv run alembic upgrade head`
 5. Run `uv run uvicorn app.main:app --reload`
+6. Run `uv run celery -A app.workers.celery_app:celery_app worker --loglevel=info --pool=solo`
 
 ## UV Commands
 
@@ -76,7 +77,7 @@ The Docker development stack reads `.env.example` directly, so `docker compose u
 The container setup is split into:
 
 - [Dockerfile](/C:/Users/Anek/DocumentGenerationAnek/Dockerfile): multi-stage image with `dev` and `prod` targets
-- [docker-compose.yml](/C:/Users/Anek/DocumentGenerationAnek/docker-compose.yml): local orchestration for API, PostgreSQL, MinIO, and bucket bootstrap
+- [docker-compose.yml](/C:/Users/Anek/DocumentGenerationAnek/docker-compose.yml): local orchestration for API, Celery worker, Redis, PostgreSQL, MinIO, and bucket bootstrap
 - [docker/entrypoint.sh](/C:/Users/Anek/DocumentGenerationAnek/docker/entrypoint.sh): startup wrapper that applies Alembic migrations before launching the app
 
 Default development stack:
@@ -89,7 +90,7 @@ Production profile:
 
 1. Copy `.env.prod.example` to `.env.prod`
 2. Set real credentials and hostnames
-3. Run `docker compose --profile prod up --build api-prod db minio minio-init`
+3. Run `docker compose --profile prod up --build api-prod worker-prod db redis minio minio-init`
 
 ## Current Scope
 
@@ -106,7 +107,9 @@ The backend reads environment configuration through nested Pydantic settings in 
 - `app`: HTTP server metadata and API paths
 - `database`: PostgreSQL connectivity and pool settings
 - `storage`: MinIO or S3-compatible storage settings
+- `redis`: Celery broker/result connectivity
 - `generation`: upload, rendering, cache, and block-size limits
+- `worker`: queue name, retries, backoff, and stale-job recovery windows
 - `paths`: local fallback directories for templates, artifacts, and temp files
 
 Use [.env.example](/C:/Users/Anek/DocumentGenerationAnek/.env.example) for host-based development and [.env.prod.example](/C:/Users/Anek/DocumentGenerationAnek/.env.prod.example) as the starting point for production configuration.
@@ -160,7 +163,7 @@ The generation pipeline is split into focused services under [app/services/gener
 
 ## Async Jobs
 
-Document jobs now follow a real lifecycle and are executed in the background:
+Document jobs now follow a real lifecycle and are executed through Celery workers backed by Redis:
 
 - `GET /health`: root health endpoint for infrastructure checks
 - `GET /api/v1/documents/jobs/{task_id}?organization_id=...`: returns `queued`, `processing`, `completed`, or `failed` plus generated artifact URLs when available
@@ -169,7 +172,7 @@ Document jobs now follow a real lifecycle and are executed in the background:
 - `GET /api/v1/documents/jobs/{task_id}/download?organization_id=...`: returns the preferred artifact plus a presigned download URL
 - `GET /api/v1/documents/jobs/{task_id}/preview?organization_id=...`: returns the preferred preview artifact plus a presigned URL
 
-The current implementation uses FastAPI background execution behind a service boundary, so it can be swapped for Celery later without changing the API contract. When the template version and normalized payload hash match a recent completed job, the backend reuses cached artifacts instead of regenerating the document.
+The API contract stays the same, but generation now leaves the API process immediately after enqueue. Workers claim queued jobs in the database, retry transient failures with backoff, and recover stale `processing` jobs after worker restarts. When the template version and normalized payload hash match a recent completed job, the backend reuses cached artifacts instead of regenerating the document.
 
 All template and document routes are protected by bearer auth. The backend now derives actor fields such as `requested_by_user_id` and `created_by_user_id` from the authenticated user instead of trusting client input.
 

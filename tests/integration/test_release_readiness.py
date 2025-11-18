@@ -137,7 +137,11 @@ async def test_generation_pipeline_writes_artifacts_and_audit_logs(monkeypatch) 
         async def get_by_id(self, job_id, organization_id=None):
             return self._state["jobs"].get(job_id)
 
-        async def mark_processing(self, job_obj, *, normalized_payload, cache_key):
+        async def claim_for_processing(self, *, job_id, normalized_payload, cache_key, stale_before):
+            _ = stale_before
+            job_obj = self._state["jobs"].get(job_id)
+            if job_obj is None or job_obj.status != DocumentJobStatus.QUEUED:
+                return None
             job_obj.status = DocumentJobStatus.PROCESSING
             job_obj.normalized_payload = normalized_payload
             job_obj.cache_key = cache_key

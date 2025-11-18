@@ -21,9 +21,9 @@ from app.repositories.document_artifact_repository import DocumentArtifactReposi
 from app.repositories.document_repository import DocumentRepository
 from app.services.audit_service import AuditService
 from app.services.generation.artifact_service import ArtifactService
-from app.services.generation.document_generation_service import DocumentGenerationService
 from app.services.generation.template_resolver_service import TemplateResolverService
 from app.services.generation.variable_mapper_service import VariableMapperService
+from app.services.job_queue_service import JobQueueService
 from app.services.storage import get_storage_service
 
 
@@ -32,9 +32,9 @@ class DocumentService:
 
     def __init__(self) -> None:
         """Configure background pipeline dependencies."""
-        self._generation_service = DocumentGenerationService()
         self._storage_service = get_storage_service()
         self._variable_mapper = VariableMapperService()
+        self._job_queue_service = JobQueueService()
 
     async def create_job(
         self,
@@ -44,6 +44,7 @@ class DocumentService:
         current_user_id: UUID,
     ) -> DocumentJobResponse:
         """Queue a document job and return the task metadata immediately."""
+        _ = background_tasks
         async with get_transaction_session() as session:
             resolver = TemplateResolverService(session)
             context = await resolver.resolve(
@@ -131,7 +132,7 @@ class DocumentService:
                         from_cache=True,
                     )
 
-        background_tasks.add_task(self._generation_service.process_job, job.id)
+        self._job_queue_service.enqueue_generation_job(job.id)
         return DocumentJobResponse(
             task_id=job.id,
             organization_id=job.organization_id,

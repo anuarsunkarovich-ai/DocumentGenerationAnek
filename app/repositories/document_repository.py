@@ -63,6 +63,44 @@ class DocumentRepository:
         await self._session.refresh(job)
         return job
 
+    async def claim_for_processing(
+        self,
+        *,
+        job_id: UUID,
+        normalized_payload: dict,
+        cache_key: str,
+        stale_before: datetime | None = None,
+    ) -> DocumentJob | None:
+        """Claim one queued or stale-processing job for worker execution."""
+        statement: Select[tuple[DocumentJob]] = (
+            select(DocumentJob)
+            .where(DocumentJob.id == job_id)
+            .with_for_update(skip_locked=True)
+        )
+        result = await self._session.execute(statement)
+        job = result.scalar_one_or_none()
+        if job is None:
+            return None
+
+        is_stale_processing = (
+            stale_before is not None
+            and job.status == DocumentJobStatus.PROCESSING
+            and job.started_at is not None
+            and job.started_at <= stale_before
+        )
+        if job.status != DocumentJobStatus.QUEUED and not is_stale_processing:
+            return None
+
+        job.status = DocumentJobStatus.PROCESSING
+        job.normalized_payload = normalized_payload
+        job.cache_key = cache_key
+        job.started_at = datetime.now(timezone.utc)
+        job.completed_at = None
+        job.error_message = None
+        await self._session.flush()
+        await self._session.refresh(job)
+        return job
+
     async def mark_completed(self, job: DocumentJob) -> DocumentJob:
         """Mark a job as completed."""
         job.status = DocumentJobStatus.COMPLETED
@@ -76,6 +114,16 @@ class DocumentRepository:
         """Mark a job as failed and store the failure message."""
         job.status = DocumentJobStatus.FAILED
         job.completed_at = datetime.now(timezone.utc)
+        job.error_message = error_message
+        await self._session.flush()
+        await self._session.refresh(job)
+        return job
+
+    async def requeue(self, job: DocumentJob, *, error_message: str | None = None) -> DocumentJob:
+        """Move a job back to queued after a transient worker failure."""
+        job.status = DocumentJobStatus.QUEUED
+        job.started_at = None
+        job.completed_at = None
         job.error_message = error_message
         await self._session.flush()
         await self._session.refresh(job)
@@ -102,3 +150,34 @@ class DocumentRepository:
         )
         result = await self._session.execute(statement)
         return result.scalars().first()
+
+    async def recover_stale_processing_jobs(
+        self,
+        *,
+        stale_before: datetime,
+        limit: int,
+    ) -> list[UUID]:
+        """Reset stale processing jobs back to queued and return their identifiers."""
+        statement: Select[tuple[DocumentJob]] = (
+            select(DocumentJob)
+            .where(
+                DocumentJob.status == DocumentJobStatus.PROCESSING,
+                DocumentJob.started_at.is_not(None),
+                DocumentJob.started_at <= stale_before,
+            )
+            .order_by(DocumentJob.started_at.asc())
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        result = await self._session.execute(statement)
+        jobs = list(result.scalars().all())
+        recovered_job_ids: list[UUID] = []
+        for job in jobs:
+            job.status = DocumentJobStatus.QUEUED
+            job.started_at = None
+            job.completed_at = None
+            job.error_message = "Recovered stale processing job."
+            recovered_job_ids.append(job.id)
+        if jobs:
+            await self._session.flush()
+        return recovered_job_ids
