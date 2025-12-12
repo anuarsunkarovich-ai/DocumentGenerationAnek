@@ -1,4 +1,4 @@
-"""Contract baseline tests that lock the shipped frontend-facing wire format."""
+"""API contract tests for shipped frontend-facing wire formats."""
 
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -19,10 +19,10 @@ from tests.conftest import build_docx_fixture
 pytestmark = pytest.mark.integration
 
 
-def test_extract_schema_contract_matches_v0_1_baseline(
+def test_extract_schema_contract_matches_current_api_contract(
     authenticated_client: TestClient,
 ) -> None:
-    """Lock the schema extraction response payload shipped in the v0.1 baseline."""
+    """Lock the schema extraction response payload."""
     response = authenticated_client.post(
         "/api/v1/templates/extract-schema",
         files={
@@ -89,7 +89,7 @@ def test_extract_schema_contract_matches_v0_1_baseline(
         "/api/v1/documents/jobs",
     ],
 )
-def test_document_job_creation_contract_matches_v0_1_baseline(
+def test_document_job_creation_contract_matches_current_api_contract(
     authenticated_client: TestClient,
     authenticated_membership,
     monkeypatch,
@@ -158,7 +158,7 @@ def test_document_job_creation_contract_matches_v0_1_baseline(
     }
 
 
-def test_constructor_schema_contract_matches_v0_1_baseline(
+def test_constructor_schema_contract_matches_current_api_contract(
     authenticated_client: TestClient,
 ) -> None:
     """Lock the shipped constructor schema discovery payload."""
@@ -207,7 +207,7 @@ def test_constructor_schema_contract_matches_v0_1_baseline(
     }
 
 
-def test_document_job_polling_contract_matches_v0_1_baseline(
+def test_document_job_polling_contract_matches_current_api_contract(
     authenticated_client: TestClient,
     authenticated_membership,
     monkeypatch,
@@ -238,9 +238,9 @@ def test_document_job_polling_contract_matches_v0_1_baseline(
             requested_by_user_id=requested_by_user_id,
             from_cache=False,
             error_message=None,
-            created_at=datetime(2026, 3, 20, 10, 0, 0, tzinfo=timezone.utc),
-            started_at=datetime(2026, 3, 20, 10, 0, 1, tzinfo=timezone.utc),
-            completed_at=datetime(2026, 3, 20, 10, 0, 3, tzinfo=timezone.utc),
+            created_at=datetime(2025, 1, 10, 10, 0, 0, tzinfo=timezone.utc),
+            started_at=datetime(2025, 1, 10, 10, 0, 1, tzinfo=timezone.utc),
+            completed_at=datetime(2025, 1, 10, 10, 0, 3, tzinfo=timezone.utc),
             artifacts=[
                 DocumentArtifactResponse(
                     id=artifact_id,
@@ -271,9 +271,9 @@ def test_document_job_polling_contract_matches_v0_1_baseline(
         "requested_by_user_id": str(requested_by_user_id),
         "from_cache": False,
         "error_message": None,
-        "created_at": "2026-03-20T10:00:00Z",
-        "started_at": "2026-03-20T10:00:01Z",
-        "completed_at": "2026-03-20T10:00:03Z",
+        "created_at": "2025-01-10T10:00:00Z",
+        "started_at": "2025-01-10T10:00:01Z",
+        "completed_at": "2025-01-10T10:00:03Z",
         "artifacts": [
             {
                 "id": str(artifact_id),

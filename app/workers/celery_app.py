@@ -3,8 +3,10 @@
 from celery import Celery
 
 from app.core.config import get_settings
+from app.core.error_reporting import configure_error_reporting
 
 settings = get_settings()
+configure_error_reporting(runtime="worker")
 
 celery_app = Celery(
     "lean_generator_backend",

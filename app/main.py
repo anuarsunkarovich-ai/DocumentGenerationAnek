@@ -4,10 +4,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse
+from starlette.responses import Response as StarletteResponse
 
+from app.api.middleware.observability import ObservabilityMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.database import database_manager
+from app.core.error_reporting import configure_error_reporting
 from app.core.exceptions import (
     ApplicationError,
     AuthenticationError,
@@ -17,7 +20,8 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.core.logging import configure_logging
-from app.dtos.health import HealthResponse
+from app.core.metrics import render_metrics
+from app.dtos.health import HealthResponse, LiveHealthResponse
 from app.services.health_service import HealthService
 from app.services.storage import get_storage_service
 
@@ -37,6 +41,7 @@ def create_application() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
     configure_logging()
+    configure_error_reporting(runtime="api")
 
     application = FastAPI(
         title=settings.app.name,
@@ -48,6 +53,7 @@ def create_application() -> FastAPI:
         openapi_url=settings.app.openapi_url,
         lifespan=application_lifespan,
     )
+    application.add_middleware(ObservabilityMiddleware)
     application.add_exception_handler(ApplicationError, application_error_handler)
     application.include_router(api_router, prefix=settings.app.api_prefix)
 
@@ -58,6 +64,28 @@ def create_application() -> FastAPI:
         if health.status != "ok":
             response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return health
+
+    @application.get("/health/live", response_model=LiveHealthResponse)
+    async def root_health_live() -> LiveHealthResponse:
+        """Return an unprefixed liveness endpoint."""
+        return await HealthService().get_liveness()
+
+    @application.get("/health/ready", response_model=HealthResponse)
+    async def root_health_ready(response: Response) -> HealthResponse:
+        """Return an unprefixed readiness endpoint."""
+        health = await HealthService().get_readiness()
+        if health.status != "ok":
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return health
+
+    @application.get("/metrics", include_in_schema=False)
+    async def metrics() -> StarletteResponse:
+        """Return Prometheus metrics."""
+        from app.services.operations_service import OperationsService
+
+        await OperationsService().refresh_runtime_metrics()
+        payload, content_type = render_metrics()
+        return StarletteResponse(content=payload, media_type=content_type)
 
     return application
 

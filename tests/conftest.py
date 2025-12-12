@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main_module
 import app.services.health_service as health_service_module
+import app.services.operations_service as operations_service_module
 from app.api.dependencies.auth import CurrentMembership, get_current_membership, get_current_user
 from app.main import app
 from app.models.enums import UserRole
@@ -136,8 +137,24 @@ async def fake_transaction_session() -> AsyncIterator[object]:
     yield TestHealthSession()
 
 
+class TestRedisClient:
+    """Minimal Redis stub for readiness and queue-depth checks in tests."""
+
+    def ping(self) -> bool:
+        return True
+
+    def llen(self, key: str) -> int:
+        _ = key
+        return 0
+
+
 cast(Any, health_service_module).get_storage_service = lambda: TEST_STORAGE_SERVICE
 cast(Any, health_service_module).get_transaction_session = fake_transaction_session
+cast(Any, operations_service_module).get_storage_service = lambda: TEST_STORAGE_SERVICE
+cast(Any, operations_service_module).get_transaction_session = fake_transaction_session
+cast(Any, operations_service_module.OperationsService)._get_redis_client = (
+    lambda self: TestRedisClient()
+)
 cast(Any, main_module).get_storage_service = lambda: TEST_STORAGE_SERVICE
 
 

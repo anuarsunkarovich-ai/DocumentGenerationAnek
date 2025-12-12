@@ -4,7 +4,7 @@ Professional backend foundation for a template-driven document generation system
 
 ## Documentation
 
-Backend documentation now lives under [docs/README.md](/C:/Users/Anek/DocumentGenerationAnek/docs/README.md).
+Project documentation lives under [docs/README.md](/C:/Users/Anek/DocumentGenerationAnek/docs/README.md).
 
 - [Architecture Overview](/C:/Users/Anek/DocumentGenerationAnek/docs/architecture.md)
 - [Environment Variables](/C:/Users/Anek/DocumentGenerationAnek/docs/environment.md)
@@ -14,7 +14,6 @@ Backend documentation now lives under [docs/README.md](/C:/Users/Anek/DocumentGe
 - [Constructor Block Schema](/C:/Users/Anek/DocumentGenerationAnek/docs/constructor-schema.md)
 - [Authorization And Tenancy](/C:/Users/Anek/DocumentGenerationAnek/docs/authorization.md)
 - [Generation Lifecycle](/C:/Users/Anek/DocumentGenerationAnek/docs/generation-lifecycle.md)
-- [Release Checklist](/C:/Users/Anek/DocumentGenerationAnek/docs/release-checklist.md)
 - [Changelog](/C:/Users/Anek/DocumentGenerationAnek/CHANGELOG.md)
 
 ## Quick Start
@@ -63,7 +62,7 @@ The repository now includes a lightweight quality gate stack:
 
 The integration suite currently covers template schema extraction and document job creation at the API layer, which gives the frontend-facing contract a basic safety net.
 
-The `v0.1` backend release baseline is anchored by [docs/release-checklist.md](/C:/Users/Anek/DocumentGenerationAnek/docs/release-checklist.md), and all backend-breaking changes after that point must be recorded in [CHANGELOG.md](/C:/Users/Anek/DocumentGenerationAnek/CHANGELOG.md).
+Public API and operational changes are summarized in [CHANGELOG.md](/C:/Users/Anek/DocumentGenerationAnek/CHANGELOG.md).
 
 ## Environment Files
 
@@ -99,6 +98,7 @@ Production profile:
 - Minimal starter endpoints for health, templates, and document jobs
 - Internal JWT auth with hashed passwords and revocable refresh sessions
 - Membership-based tenancy with role-driven authorization
+- Structured request/job logging, Prometheus metrics, and optional Sentry integration
 
 ## Configuration
 
@@ -110,6 +110,7 @@ The backend reads environment configuration through nested Pydantic settings in 
 - `redis`: Celery broker/result connectivity
 - `generation`: upload, rendering, cache, and block-size limits
 - `worker`: queue name, retries, backoff, and stale-job recovery windows
+- `observability`: request IDs, correlation headers, and Sentry options
 - `paths`: local fallback directories for templates, artifacts, and temp files
 
 Use [.env.example](/C:/Users/Anek/DocumentGenerationAnek/.env.example) for host-based development and [.env.prod.example](/C:/Users/Anek/DocumentGenerationAnek/.env.prod.example) as the starting point for production configuration.
@@ -175,6 +176,8 @@ Document jobs now follow a real lifecycle and are executed through Celery worker
 The API contract stays the same, but generation now leaves the API process immediately after enqueue. Workers claim queued jobs in the database, retry transient failures with backoff, and recover stale `processing` jobs after worker restarts. When the template version and normalized payload hash match a recent completed job, the backend reuses cached artifacts instead of regenerating the document.
 
 All template and document routes are protected by bearer auth. The backend now derives actor fields such as `requested_by_user_id` and `created_by_user_id` from the authenticated user instead of trusting client input.
+
+Observability is available through structured logs, `/metrics`, `/health/live`, `/health/ready`, and admin diagnostics routes under `/api/v1/admin/diagnostics`.
 
 ## Multi-Tenancy
 

@@ -181,6 +181,17 @@ class WorkerSettings(BaseModel):
     result_expires_seconds: int = 3600
 
 
+class ObservabilitySettings(BaseModel):
+    """Structured logging, metrics, and error-reporting settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.0
+    request_id_header: str = "X-Request-ID"
+    correlation_id_header: str = "X-Correlation-ID"
+
+
 class PathsSettings(BaseModel):
     """Local filesystem paths used by the application."""
 
@@ -209,6 +220,7 @@ class Settings(BaseSettings):
     generation: GenerationSettings = Field(default_factory=GenerationSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
+    observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     paths: PathsSettings = Field(default_factory=PathsSettings)
 
 

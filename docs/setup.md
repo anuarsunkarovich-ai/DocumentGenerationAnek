@@ -65,6 +65,9 @@ docker compose up --build
 Services:
 
 - API: `http://localhost:8000`
+- Prometheus metrics: `http://localhost:8000/metrics`
+- Liveness: `http://localhost:8000/health/live`
+- Readiness: `http://localhost:8000/health/ready`
 - Redis: `localhost:6379`
 - PostgreSQL: `localhost:5432`
 - MinIO API: `http://localhost:9000`

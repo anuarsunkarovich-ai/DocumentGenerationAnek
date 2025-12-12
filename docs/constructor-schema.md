@@ -1,12 +1,6 @@
 # Constructor Block Schema
 
-## Contract Status
-
-- Backend release baseline: `v0.1`
-- Constructor descriptor version: `1.0`
-- Reference route: `GET /api/v1/documents/constructor-schema`
-
-The backend release baseline `v0.1` freezes the shipped constructor request and discovery contract. The discovery endpoint currently returns a nested `descriptor` object:
+The constructor descriptor version is `1.0`, exposed by `GET /api/v1/documents/constructor-schema`. The discovery endpoint currently returns a nested `descriptor` object:
 
 ```json
 {
@@ -18,7 +12,7 @@ The backend release baseline `v0.1` freezes the shipped constructor request and 
 }
 ```
 
-The request schema documented below is the payload described by `descriptor.schema_version = "1.0"`.
+The request schema documented below matches `descriptor.schema_version = "1.0"`.
 
 ## Overview
 

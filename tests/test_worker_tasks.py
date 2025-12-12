@@ -424,7 +424,15 @@ async def test_document_service_enqueues_generation_job(monkeypatch) -> None:
             return SimpleNamespace(**payload)
 
     class FakeQueueService:
-        def enqueue_generation_job(self, job_id: UUID) -> None:
+        def enqueue_generation_job(
+            self,
+            job_id: UUID,
+            *,
+            organization_id=None,
+            user_id=None,
+            template_version_id=None,
+        ) -> None:
+            _ = organization_id, user_id, template_version_id
             enqueued_job_ids.append(job_id)
 
     monkeypatch.setattr(document_service_module, "get_transaction_session", fake_transaction_session)

@@ -1,11 +1,14 @@
 """Application services for document generation."""
 
+import logging
 from uuid import UUID
 
 from fastapi import BackgroundTasks
 
 from app.core.database import get_transaction_session
 from app.core.exceptions import NotFoundError
+from app.core.metrics import record_cache_event
+from app.core.request_context import bind_context
 from app.dtos.constructor import DocumentConstructor
 from app.dtos.document import (
     ConstructorSchemaResponse,
@@ -25,6 +28,8 @@ from app.services.generation.template_resolver_service import TemplateResolverSe
 from app.services.generation.variable_mapper_service import VariableMapperService
 from app.services.job_queue_service import JobQueueService
 from app.services.storage import get_storage_service
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentService:
@@ -72,6 +77,12 @@ class DocumentService:
                     normalized_payload=normalized_payload,
                     cache_key=cache_key,
                 )
+            )
+            bind_context(
+                job_id=job.id,
+                organization_id=job.organization_id,
+                user_id=current_user_id,
+                template_version_id=job.template_version_id,
             )
             await audit_service.log_event(
                 organization_id=job.organization_id,
@@ -122,6 +133,14 @@ class DocumentService:
                             "reused_from_job_id": str(cached_job.id),
                         },
                     )
+                    record_cache_event(hit=True)
+                    logger.info(
+                        "document job completed from cache",
+                        extra={
+                            "event": "document_job.cache_hit",
+                            "reused_from_job_id": str(cached_job.id),
+                        },
+                    )
                     return DocumentJobResponse(
                         task_id=job.id,
                         organization_id=job.organization_id,
@@ -132,7 +151,19 @@ class DocumentService:
                         from_cache=True,
                     )
 
-        self._job_queue_service.enqueue_generation_job(job.id)
+        record_cache_event(hit=False)
+        logger.info(
+            "document job queued",
+            extra={
+                "event": "document_job.queued",
+            },
+        )
+        self._job_queue_service.enqueue_generation_job(
+            job.id,
+            organization_id=job.organization_id,
+            user_id=current_user_id,
+            template_version_id=job.template_version_id,
+        )
         return DocumentJobResponse(
             task_id=job.id,
             organization_id=job.organization_id,

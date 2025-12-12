@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import Select, desc, select
+from sqlalchemy import Select, desc, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -150,6 +150,66 @@ class DocumentRepository:
         )
         result = await self._session.execute(statement)
         return result.scalars().first()
+
+    async def list_failed_jobs(
+        self,
+        *,
+        organization_id: UUID,
+        limit: int,
+    ) -> list[DocumentJob]:
+        """Return recent failed jobs for one organization."""
+        statement: Select[tuple[DocumentJob]] = (
+            select(DocumentJob)
+            .options(
+                selectinload(DocumentJob.artifacts),
+                selectinload(DocumentJob.template),
+                selectinload(DocumentJob.template_version),
+            )
+            .where(
+                DocumentJob.organization_id == organization_id,
+                DocumentJob.status == DocumentJobStatus.FAILED,
+            )
+            .order_by(desc(DocumentJob.completed_at), desc(DocumentJob.created_at))
+            .limit(limit)
+        )
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())
+
+    async def get_cache_stats(
+        self,
+        *,
+        organization_id: UUID,
+    ) -> dict[str, int]:
+        """Return basic cache usage stats for one organization."""
+        from app.models.document_artifact import DocumentArtifact
+
+        completed_jobs_query = await self._session.execute(
+            select(func.count(DocumentJob.id)).where(
+                DocumentJob.organization_id == organization_id,
+                DocumentJob.status == DocumentJobStatus.COMPLETED,
+            )
+        )
+        cached_jobs_query = await self._session.execute(
+            select(func.count(distinct(DocumentJob.id)))
+            .join(DocumentArtifact, DocumentArtifact.document_job_id == DocumentJob.id)
+            .where(
+                DocumentJob.organization_id == organization_id,
+                DocumentJob.status == DocumentJobStatus.COMPLETED,
+                DocumentArtifact.is_cached.is_(True),
+            )
+        )
+        cached_artifacts_query = await self._session.execute(
+            select(func.count(DocumentArtifact.id)).where(
+                DocumentArtifact.organization_id == organization_id,
+                DocumentArtifact.is_cached.is_(True),
+            )
+        )
+
+        return {
+            "completed_jobs": int(completed_jobs_query.scalar_one() or 0),
+            "cached_jobs": int(cached_jobs_query.scalar_one() or 0),
+            "cached_artifacts": int(cached_artifacts_query.scalar_one() or 0),
+        }
 
     async def recover_stale_processing_jobs(
         self,

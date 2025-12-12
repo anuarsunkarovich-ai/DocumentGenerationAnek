@@ -3,12 +3,13 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.auth import decode_access_token
 from app.core.database import get_transaction_session
 from app.core.exceptions import AuthenticationError, AuthorizationError
+from app.core.request_context import bind_request_state
 from app.models.enums import UserRole
 from app.models.organization_membership import OrganizationMembership
 from app.models.user import User
@@ -79,6 +80,7 @@ def resolve_membership(
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> User:
     """Resolve the authenticated user from a bearer access token."""
@@ -98,11 +100,19 @@ async def get_current_user(
             for membership in user.memberships
         ):
             raise AuthenticationError("Access token is invalid.")
+        bind_request_state(request, user_id=user.id)
         return user
 
 
 async def get_current_membership(
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> CurrentMembership:
     """Resolve the authenticated organization membership for this request."""
-    return resolve_membership(user=current_user)
+    membership = resolve_membership(user=current_user)
+    bind_request_state(
+        request,
+        user_id=membership.user_id,
+        organization_id=membership.organization_id,
+    )
+    return membership

@@ -18,6 +18,10 @@ class DatabaseSessionManager:
 
     def __init__(self) -> None:
         """Initialize the engine and session factory from settings."""
+        self._configure()
+
+    def _configure(self) -> None:
+        """Create a fresh engine and session factory."""
         settings = get_settings()
         self._engine: AsyncEngine = create_async_engine(
             settings.database.url,
@@ -60,10 +64,23 @@ class DatabaseSessionManager:
         """Dispose the async engine cleanly."""
         await self._engine.dispose()
 
+    def reset(self) -> None:
+        """Recreate the engine and session factory for a new process."""
+        self._configure()
+
 
 database_manager = DatabaseSessionManager()
 engine = database_manager.engine
 SessionLocal = database_manager.session_factory
+
+
+def reset_database_manager() -> None:
+    """Reset the shared database manager and exported session globals."""
+    global engine, SessionLocal
+
+    database_manager.reset()
+    engine = database_manager.engine
+    SessionLocal = database_manager.session_factory
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:

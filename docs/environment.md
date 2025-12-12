@@ -110,6 +110,15 @@ Derived value:
 | `WORKER__STALE_JOB_RECOVERY_BATCH_SIZE` | max stale jobs recovered per scan | `100` |
 | `WORKER__RESULT_EXPIRES_SECONDS` | retention period for Celery result metadata | `3600` |
 
+## Observability Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `OBSERVABILITY__SENTRY_DSN` | optional Sentry DSN for API and worker exceptions | empty |
+| `OBSERVABILITY__SENTRY_TRACES_SAMPLE_RATE` | Sentry tracing sample rate | `0.0` |
+| `OBSERVABILITY__REQUEST_ID_HEADER` | response and request header used for request IDs | `X-Request-ID` |
+| `OBSERVABILITY__CORRELATION_ID_HEADER` | response and request header used for distributed correlation | `X-Correlation-ID` |
+
 ## Recommended Files
 
 - `.env.example`: host-based local development
@@ -125,5 +134,6 @@ Frontend work usually only needs these values:
 - `APP__CORS_ORIGINS`
 - auth token storage and refresh behavior derived from `AUTH__ACCESS_TOKEN_TTL_MINUTES` and `AUTH__REFRESH_TOKEN_TTL_DAYS`
 - the Celery/Redis worker topology driven by `REDIS__*` and `WORKER__*`
+- request/correlation headers controlled by `OBSERVABILITY__REQUEST_ID_HEADER` and `OBSERVABILITY__CORRELATION_ID_HEADER`
 - the host/port where the backend is running
 - the MinIO-presigned URL behavior indirectly used by download endpoints

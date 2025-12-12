@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 import app.main as main_module
 import app.services.document_service as document_service_module
 import app.services.generation.document_generation_service as generation_module
-import app.services.health_service as health_service_module
+import app.services.operations_service as operations_service_module
 from app.dtos.document import DocumentJobCreateRequest
 from app.models.document_artifact import DocumentArtifact
 from app.models.enums import ArtifactKind, AuditAction, DocumentJobStatus
@@ -106,7 +106,7 @@ def test_application_startup_ensures_minio_bucket(monkeypatch) -> None:
 
     monkeypatch.setattr(main_module, "get_storage_service", lambda: storage)
     monkeypatch.setattr(main_module.database_manager, "dispose", fake_dispose)
-    monkeypatch.setattr(health_service_module, "get_storage_service", lambda: storage)
+    monkeypatch.setattr(operations_service_module, "get_storage_service", lambda: storage)
 
     with TestClient(main_module.create_application()) as client:
         response = client.get("/health")

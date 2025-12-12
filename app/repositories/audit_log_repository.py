@@ -41,3 +41,19 @@ class AuditLogRepository:
         )
         result = await self._session.execute(statement)
         return list(result.scalars().all())
+
+    async def list_recent(
+        self,
+        *,
+        organization_id: UUID,
+        limit: int,
+    ) -> list[AuditLog]:
+        """Return recent audit log entries for one organization."""
+        statement: Select[tuple[AuditLog]] = (
+            select(AuditLog)
+            .where(AuditLog.organization_id == organization_id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())

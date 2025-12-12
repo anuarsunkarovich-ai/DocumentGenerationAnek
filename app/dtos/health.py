@@ -18,3 +18,10 @@ class HealthResponse(BaseDTO):
     status: str
     service: str
     checks: dict[str, HealthDependencyResponse] = Field(default_factory=dict)
+
+
+class LiveHealthResponse(BaseDTO):
+    """Liveness response model."""
+
+    status: str
+    service: str

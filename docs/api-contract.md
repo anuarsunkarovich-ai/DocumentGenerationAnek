@@ -11,20 +11,6 @@
 - actor identifiers on protected routes are derived from the authenticated user, not trusted from client input
 - `organization_id` selections on protected routes are validated against active organization memberships
 
-## Release Baseline
-
-- Backend release baseline: `v0.1`
-- Baseline date: March 20, 2026
-- Baseline reference point: `docs/release-checklist.md`
-- Locked contracts at this baseline:
-  - `POST /api/v1/templates/extract-schema`
-  - `GET /api/v1/documents/constructor-schema`
-  - `POST /api/v1/documents/generate`
-  - `POST /api/v1/documents/jobs`
-  - `GET /api/v1/documents/jobs/{task_id}`
-- These endpoints do not currently emit a top-level release version field. Their shipped contract version is tracked in this document, enforced by tests, and recorded in `CHANGELOG.md`.
-- Breaking any of these shapes requires a coordinated frontend change and a `CHANGELOG.md` entry.
-
 ## Health
 
 ### `GET /health`
@@ -43,6 +29,14 @@ Response:
 ### `GET /api/v1/health`
 
 Versioned health route for application clients.
+
+### `GET /health/live` and `GET /api/v1/health/live`
+
+Process liveness only. Useful for container liveness probes.
+
+### `GET /health/ready` and `GET /api/v1/health/ready`
+
+Dependency readiness for database, storage, and Redis. Returns `503` when dependencies are unavailable.
 
 ## Authentication
 
@@ -153,8 +147,6 @@ Response adds:
 
 Multipart upload route for schema extraction without persistence.
 
-Contract version: `v0.1`
-
 Form fields:
 
 - `file`: `.docx`
@@ -236,8 +228,6 @@ Re-extract schema from the currently stored template version and persist the upd
 
 ### `GET /api/v1/documents/constructor-schema`
 
-Contract version: `v0.1`
-
 Returns:
 
 ```json
@@ -291,8 +281,6 @@ Use `descriptor.schema_version` as the constructor model version and use this ro
 
 Alias of `POST /api/v1/documents/jobs`.
 
-Contract version: `v0.1`
-
 Request body:
 
 ```json
@@ -343,11 +331,14 @@ Backend execution note:
 - API nodes now enqueue a Celery task and return immediately
 - workers recover stale `processing` jobs after restarts and retry transient failures with backoff
 
+Response headers:
+
+- `X-Request-ID`: request identifier generated or echoed by the API
+- `X-Correlation-ID`: correlation identifier propagated into worker execution
+
 ### `GET /api/v1/documents/jobs/{task_id}?organization_id=<uuid>`
 
 Polling route for job status.
-
-Contract version: `v0.1`
 
 Response:
 
@@ -361,9 +352,9 @@ Response:
   "requested_by_user_id": "uuid",
   "from_cache": false,
   "error_message": null,
-  "created_at": "2026-03-20T10:00:00Z",
-  "started_at": "2026-03-20T10:00:01Z",
-  "completed_at": "2026-03-20T10:00:03Z",
+  "created_at": "2025-01-10T10:00:00Z",
+  "started_at": "2025-01-10T10:00:01Z",
+  "completed_at": "2025-01-10T10:00:03Z",
   "artifacts": [
     {
       "id": "uuid",
@@ -407,6 +398,26 @@ Typical statuses:
 - `404` not found
 - `409` conflict
 - `422` validation failure
+
+## Admin Diagnostics
+
+These routes require an admin membership for the target organization.
+
+### `GET /api/v1/admin/diagnostics/failed-jobs?organization_id=<uuid>&limit=25`
+
+Returns recent failed document jobs for one organization.
+
+### `GET /api/v1/admin/diagnostics/audit-events?organization_id=<uuid>&limit=25`
+
+Returns recent audit events for one organization.
+
+### `GET /api/v1/admin/diagnostics/cache-stats?organization_id=<uuid>`
+
+Returns aggregate cache usage stats for one organization.
+
+### `GET /api/v1/admin/diagnostics/worker-status?organization_id=<uuid>`
+
+Returns worker availability and current queue depth.
 
 ## Frontend Integration Notes
 

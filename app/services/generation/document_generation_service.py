@@ -1,5 +1,7 @@
 """Orchestrate background document generation jobs."""
 
+import logging
+import time
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -12,6 +14,8 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from app.core.metrics import record_job_result
+from app.core.request_context import bind_context
 from app.dtos.constructor import DocumentConstructor
 from app.models.enums import AuditAction
 from app.repositories.document_repository import DocumentRepository
@@ -23,6 +27,8 @@ from app.services.generation.template_resolver_service import TemplateResolverSe
 from app.services.generation.variable_mapper_service import VariableMapperService
 from app.services.storage import get_storage_service
 from app.services.storage.minio import StorageError
+
+logger = logging.getLogger(__name__)
 
 
 class RetryableGenerationError(Exception):
@@ -46,6 +52,7 @@ class DocumentGenerationService:
 
     async def process_job(self, job_id: UUID) -> bool:
         """Process a queued job end to end in the background."""
+        started_at = time.perf_counter()
         try:
             context = None
             async with get_transaction_session() as session:
@@ -53,6 +60,12 @@ class DocumentGenerationService:
                 job = await repository.get_by_id(job_id)
                 if job is None:
                     return False
+                bind_context(
+                    job_id=job.id,
+                    organization_id=job.organization_id,
+                    user_id=job.requested_by_user_id,
+                    template_version_id=job.template_version_id,
+                )
 
                 resolver = TemplateResolverService(session)
                 context = await resolver.resolve(
@@ -81,7 +94,15 @@ class DocumentGenerationService:
                     stale_before=stale_before,
                 )
                 if claimed_job is None:
+                    logger.info(
+                        "document job claim skipped",
+                        extra={"event": "document_job.claim_skipped"},
+                    )
                     return False
+                logger.info(
+                    "document job claimed",
+                    extra={"event": "document_job.processing_started"},
+                )
 
             docx_bytes = self._composer.compose(resolved_document)
             pdf_bytes = self._pdf_renderer.render(resolved_document)
@@ -119,12 +140,41 @@ class DocumentGenerationService:
                         "from_cache": False,
                     },
                 )
+            duration_seconds = time.perf_counter() - started_at
+            record_job_result(result="success", duration_seconds=duration_seconds)
+            logger.info(
+                "document job completed",
+                extra={
+                    "event": "document_job.completed",
+                    "duration_ms": round(duration_seconds * 1000, 2),
+                },
+            )
             return True
         except Exception as error:
             if self._is_retryable_error(error):
                 await self._requeue_job(job_id, str(error))
+                duration_seconds = time.perf_counter() - started_at
+                record_job_result(result="retryable_failure", duration_seconds=duration_seconds)
+                logger.warning(
+                    "document job hit retryable failure",
+                    extra={
+                        "event": "document_job.retryable_failure",
+                        "duration_ms": round(duration_seconds * 1000, 2),
+                        "error": str(error),
+                    },
+                )
                 raise RetryableGenerationError(str(error)) from error
             await self._mark_failed_job(job_id, str(error))
+            duration_seconds = time.perf_counter() - started_at
+            record_job_result(result="failure", duration_seconds=duration_seconds)
+            logger.error(
+                "document job failed permanently",
+                extra={
+                    "event": "document_job.failed",
+                    "duration_ms": round(duration_seconds * 1000, 2),
+                    "error": str(error),
+                },
+            )
             raise PermanentGenerationError(str(error)) from error
 
     async def recover_stale_jobs(self) -> list[UUID]:
@@ -134,10 +184,19 @@ class DocumentGenerationService:
         )
         async with get_transaction_session() as session:
             repository = DocumentRepository(session)
-            return await repository.recover_stale_processing_jobs(
+            recovered_job_ids = await repository.recover_stale_processing_jobs(
                 stale_before=stale_before,
                 limit=self._settings.worker.stale_job_recovery_batch_size,
             )
+            if recovered_job_ids:
+                logger.warning(
+                    "recovered stale document jobs",
+                    extra={
+                        "event": "document_job.stale_recovered",
+                        "recovered_count": len(recovered_job_ids),
+                    },
+                )
+            return recovered_job_ids
 
     def _is_retryable_error(self, error: Exception) -> bool:
         """Return whether a generation failure is likely transient."""

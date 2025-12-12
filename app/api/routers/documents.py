@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 
 from app.api.controllers.document_controller import DocumentController
 from app.api.dependencies.auth import (
@@ -41,12 +41,13 @@ async def get_constructor_schema(
 
 @router.get("/jobs/{task_id}", response_model=DocumentJobStatusResponse)
 async def get_document_job_status(
+    request: Request,
     task_id: UUID,
     query: Annotated[DocumentJobAccessQuery, Depends()],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> DocumentJobStatusResponse:
     """Return the current status and artifacts for a generation job."""
-    require_job_read_access(current_user, query.organization_id)
+    require_job_read_access(current_user, query.organization_id, request=request)
     controller = DocumentController(service=DocumentService())
     return await controller.get_job_status(
         organization_id=query.organization_id,
@@ -56,12 +57,13 @@ async def get_document_job_status(
 
 @router.get("/jobs/{task_id}/download", response_model=DocumentArtifactAccessResponse)
 async def get_document_job_download(
+    request: Request,
     task_id: UUID,
     query: Annotated[DocumentJobAccessQuery, Depends()],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> DocumentArtifactAccessResponse:
     """Return the best downloadable artifact for a generation job."""
-    require_job_read_access(current_user, query.organization_id)
+    require_job_read_access(current_user, query.organization_id, request=request)
     controller = DocumentController(service=DocumentService())
     return await controller.get_download_artifact(
         organization_id=query.organization_id,
@@ -71,12 +73,13 @@ async def get_document_job_download(
 
 @router.get("/jobs/{task_id}/preview", response_model=DocumentArtifactAccessResponse)
 async def get_document_job_preview(
+    request: Request,
     task_id: UUID,
     query: Annotated[DocumentJobAccessQuery, Depends()],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> DocumentArtifactAccessResponse:
     """Return the best preview artifact for a generation job."""
-    require_job_read_access(current_user, query.organization_id)
+    require_job_read_access(current_user, query.organization_id, request=request)
     controller = DocumentController(service=DocumentService())
     return await controller.get_preview_artifact(
         organization_id=query.organization_id,
@@ -87,12 +90,13 @@ async def get_document_job_preview(
 @router.post("/jobs", response_model=DocumentJobResponse, status_code=status.HTTP_202_ACCEPTED)
 @router.post("/generate", response_model=DocumentJobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def create_document_job(
+    request: Request,
     payload: DocumentJobCreateRequest,
     background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> DocumentJobResponse:
     """Queue a new document generation job."""
-    membership = require_generation_access(current_user, payload.organization_id)
+    membership = require_generation_access(current_user, payload.organization_id, request=request)
     controller = DocumentController(service=DocumentService())
     return await controller.create_job(
         payload,

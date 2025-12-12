@@ -1,17 +1,22 @@
 """Celery tasks for document-generation work."""
 
 import asyncio
+import logging
 from typing import Any, Protocol
 from uuid import UUID
 
-from celery.signals import worker_ready
+from celery.signals import worker_process_init, worker_ready
 
 from app.core.config import get_settings
+from app.core.database import reset_database_manager
+from app.core.request_context import bind_context, clear_context
 from app.services.generation.document_generation_service import (
     DocumentGenerationService,
     RetryableGenerationError,
 )
 from app.workers.celery_app import celery_app
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessJobService(Protocol):
@@ -44,6 +49,7 @@ def _run_process_document_job(
     service: ProcessJobService | None = None,
 ) -> bool:
     """Execute one document generation task and translate retryable failures."""
+    reset_database_manager()
     generation_service = service or DocumentGenerationService()
     try:
         return asyncio.run(generation_service.process_job(job_id))
@@ -62,6 +68,7 @@ def _run_recover_stale_document_jobs(
     enqueue_job: Any = _enqueue_process_document_job,
 ) -> list[str]:
     """Recover stale jobs and re-enqueue them for processing."""
+    reset_database_manager()
     generation_service = service or DocumentGenerationService()
     recovered_job_ids = asyncio.run(generation_service.recover_stale_jobs())
     for job_id in recovered_job_ids:
@@ -76,14 +83,35 @@ def _run_recover_stale_document_jobs(
 )
 def process_document_job(self, job_id: str) -> bool:
     """Process one document generation job in the worker."""
-    return _run_process_document_job(self, job_id=UUID(job_id))
+    headers = getattr(self.request, "headers", {}) or {}
+    bind_context(
+        request_id=headers.get("request_id"),
+        correlation_id=headers.get("correlation_id"),
+        job_id=headers.get("job_id") or job_id,
+        organization_id=headers.get("organization_id"),
+        user_id=headers.get("user_id"),
+        template_version_id=headers.get("template_version_id"),
+    )
+    logger.info(
+        "worker received document job",
+        extra={
+            "event": "document_job.worker_received",
+        },
+    )
+    try:
+        return _run_process_document_job(self, job_id=UUID(job_id))
+    finally:
+        clear_context()
 
 
 @celery_app.task(bind=True, name="document_jobs.recover_stale")
 def recover_stale_document_jobs(self) -> list[str]:
     """Requeue stale processing jobs after worker restarts or interruptions."""
     _ = self
-    return _run_recover_stale_document_jobs()
+    try:
+        return _run_recover_stale_document_jobs()
+    finally:
+        clear_context()
 
 
 @worker_ready.connect
@@ -91,3 +119,10 @@ def queue_stale_document_job_recovery(sender, **kwargs) -> None:
     """Trigger stale-job recovery when a worker comes online."""
     _ = sender, kwargs
     recover_stale_document_jobs.delay()
+
+
+@worker_process_init.connect
+def reinitialize_worker_process_state(**kwargs) -> None:
+    """Recreate process-local database resources for Celery child workers."""
+    _ = kwargs
+    reset_database_manager()
