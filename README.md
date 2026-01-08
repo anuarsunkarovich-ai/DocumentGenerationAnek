@@ -52,15 +52,16 @@ The backend is UV-first. These are the supported day-to-day commands:
 
 ## Quality Gates
 
-The repository now includes a lightweight quality gate stack:
+The repository now includes a layered quality gate stack:
 
 - `ruff` for linting and import/order hygiene
 - `pytest` for unit, migration, and API integration tests
 - `mypy` for static type checks on the typed backend surface
-- Alembic migration validation through offline upgrade tests and single-head checks
+- Alembic migration validation through offline upgrade tests, single-head checks, and destructive-change guards
+- GitHub Actions jobs for fast checks, service-backed integration tests, and a full Docker stack smoke test
 - one-command verification through [scripts/quality_gate.py](/C:/Users/Anek/DocumentGenerationAnek/scripts/quality_gate.py)
 
-The integration suite currently covers template schema extraction and document job creation at the API layer, which gives the frontend-facing contract a basic safety net.
+The CI pipeline boots real PostgreSQL, MinIO, and Redis infrastructure, runs migration round-trips on an empty database, and brings the full Docker stack up from zero to verify template upload, schema extraction, Celery generation, cache reuse, audit persistence, and download endpoints.
 
 Public API and operational changes are summarized in [CHANGELOG.md](/C:/Users/Anek/DocumentGenerationAnek/CHANGELOG.md).
 
@@ -107,6 +108,7 @@ The backend reads environment configuration through nested Pydantic settings in 
 - `app`: HTTP server metadata and API paths
 - `database`: PostgreSQL connectivity and pool settings
 - `storage`: MinIO or S3-compatible storage settings
+  - `public_endpoint` and `public_secure` let the API generate client-reachable presigned URLs even when the storage service uses an internal container hostname
 - `redis`: Celery broker/result connectivity
 - `generation`: upload, rendering, cache, and block-size limits
 - `worker`: queue name, retries, backoff, and stale-job recovery windows

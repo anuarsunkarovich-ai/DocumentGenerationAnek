@@ -1,7 +1,7 @@
 """MinIO-backed object storage implementation."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 from minio import Minio
@@ -32,6 +32,13 @@ class MinioStorageService(StorageService):
             secret_key=settings.secret_key,
             secure=settings.secure,
             region=settings.region,
+        )
+        self._public_client = Minio(
+            endpoint=settings.public_endpoint or settings.endpoint,
+            access_key=settings.access_key,
+            secret_key=settings.secret_key,
+            secure=settings.public_secure_value,
+            region=settings.region or "us-east-1",
         )
         self._key_builder = StorageKeyBuilder(settings)
 
@@ -168,7 +175,7 @@ class MinioStorageService(StorageService):
         """Return a temporary download URL for an object."""
         try:
             return await asyncio.to_thread(
-                self._client.presigned_get_object,
+                self._public_client.presigned_get_object,
                 self._bucket,
                 key,
                 timedelta(seconds=self._settings.presigned_url_expiry_seconds),
@@ -217,7 +224,7 @@ class MinioStorageService(StorageService):
             etag=result.etag,
             version_id=result.version_id,
             url=self._build_object_url(key),
-            last_modified=datetime.utcnow(),
+            last_modified=datetime.now(timezone.utc),
         )
 
     def _build_object_url(self, key: str) -> str:

@@ -62,10 +62,12 @@ class StorageSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     endpoint: str = "minio:9000"
+    public_endpoint: str | None = None
     access_key: str = "minioadmin"
     secret_key: str = "minioadmin"
     bucket: str = "documents"
     secure: bool = False
+    public_secure: bool | None = None
     region: str | None = None
     templates_prefix: str = "templates"
     artifacts_prefix: str = "artifacts"
@@ -78,8 +80,15 @@ class StorageSettings(BaseModel):
     @property
     def public_base_url(self) -> str:
         """Return the base storage URL for the current protocol."""
-        scheme = "https" if self.secure else "http"
-        return f"{scheme}://{self.endpoint}"
+        scheme = "https" if self.public_secure_value else "http"
+        endpoint = self.public_endpoint or self.endpoint
+        return f"{scheme}://{endpoint}"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def public_secure_value(self) -> bool:
+        """Return the effective secure flag for public download URLs."""
+        return self.public_secure if self.public_secure is not None else self.secure
 
 
 class RedisSettings(BaseModel):

@@ -51,10 +51,12 @@ Derived value:
 | Variable | Meaning | Default |
 | --- | --- | --- |
 | `STORAGE__ENDPOINT` | MinIO or S3-compatible endpoint | `minio:9000` |
+| `STORAGE__PUBLIC_ENDPOINT` | external host used when building presigned download URLs | empty |
 | `STORAGE__ACCESS_KEY` | storage access key | `minioadmin` |
 | `STORAGE__SECRET_KEY` | storage secret key | `minioadmin` |
 | `STORAGE__BUCKET` | main object bucket | `documents` |
 | `STORAGE__SECURE` | use HTTPS | `false` |
+| `STORAGE__PUBLIC_SECURE` | override HTTPS for presigned public URLs | empty |
 | `STORAGE__REGION` | optional storage region | empty |
 | `STORAGE__TEMPLATES_PREFIX` | template source prefix | `templates` |
 | `STORAGE__ARTIFACTS_PREFIX` | generated artifact prefix | `artifacts` |
@@ -62,6 +64,11 @@ Derived value:
 | `STORAGE__PREVIEWS_PREFIX` | preview prefix | `previews` |
 | `STORAGE__PRESIGNED_URL_EXPIRY_SECONDS` | download URL TTL | `3600` |
 | `STORAGE__AUTO_CREATE_BUCKET` | auto-create bucket on startup | `true` |
+
+Notes:
+
+- `STORAGE__ENDPOINT` is the backend-to-storage address.
+- `STORAGE__PUBLIC_ENDPOINT` is optional and should be set when clients must download through a different host than the API container uses internally.
 
 ## Redis Settings
 

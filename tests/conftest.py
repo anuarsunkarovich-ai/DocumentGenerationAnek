@@ -11,7 +11,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main_module
-import app.services.health_service as health_service_module
 import app.services.operations_service as operations_service_module
 from app.api.dependencies.auth import CurrentMembership, get_current_membership, get_current_user
 from app.main import app
@@ -148,14 +147,36 @@ class TestRedisClient:
         return 0
 
 
-cast(Any, health_service_module).get_storage_service = lambda: TEST_STORAGE_SERVICE
-cast(Any, health_service_module).get_transaction_session = fake_transaction_session
-cast(Any, operations_service_module).get_storage_service = lambda: TEST_STORAGE_SERVICE
-cast(Any, operations_service_module).get_transaction_session = fake_transaction_session
-cast(Any, operations_service_module.OperationsService)._get_redis_client = (
-    lambda self: TestRedisClient()
-)
-cast(Any, main_module).get_storage_service = lambda: TEST_STORAGE_SERVICE
+@pytest.fixture(autouse=True)
+def patch_default_test_infrastructure(monkeypatch, request) -> Generator[None, None, None]:
+    """Keep lightweight test doubles as the default outside live integration suites."""
+    if request.node.get_closest_marker("service_integration") or request.node.get_closest_marker(
+        "live_stack"
+    ):
+        yield
+        return
+
+    monkeypatch.setattr(
+        operations_service_module,
+        "get_storage_service",
+        lambda: TEST_STORAGE_SERVICE,
+    )
+    monkeypatch.setattr(
+        operations_service_module,
+        "get_transaction_session",
+        fake_transaction_session,
+    )
+    monkeypatch.setattr(
+        operations_service_module.OperationsService,
+        "_get_redis_client",
+        lambda self: TestRedisClient(),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "get_storage_service",
+        lambda: TEST_STORAGE_SERVICE,
+    )
+    yield
 
 
 def create_test_client() -> TestClient:

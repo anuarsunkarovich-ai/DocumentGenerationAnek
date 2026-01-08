@@ -48,6 +48,16 @@ uv run pytest
 uv run python scripts/quality_gate.py
 ```
 
+### Smoke-Test Admin
+
+For a local Docker stack you can seed an admin user with:
+
+```bash
+uv run python scripts/seed_stack_admin.py
+```
+
+The script writes JSON with the seeded organization and login credentials so you can start testing the live API immediately.
+
 ## Docker Setup
 
 ### Files
@@ -109,7 +119,9 @@ Check:
 Check:
 
 - `STORAGE__ENDPOINT`
+- `STORAGE__PUBLIC_ENDPOINT`
 - `STORAGE__SECURE`
+- `STORAGE__PUBLIC_SECURE`
 - whether the frontend can reach the storage endpoint used for presigned URLs
 
 ### Migrations fail in Docker

@@ -11,6 +11,8 @@ services:
       APP__DEBUG: "true"
       DATABASE__HOST: db
       STORAGE__ENDPOINT: minio:9000
+      STORAGE__PUBLIC_ENDPOINT: localhost:9000
+      STORAGE__PUBLIC_SECURE: "false"
       REDIS__HOST: redis
       RUN_MIGRATIONS: "true"
     command:
@@ -59,6 +61,8 @@ services:
     environment:
       DATABASE__HOST: db
       STORAGE__ENDPOINT: minio:9000
+      STORAGE__PUBLIC_ENDPOINT: localhost:9000
+      STORAGE__PUBLIC_SECURE: "false"
       REDIS__HOST: redis
       RUN_MIGRATIONS: "true"
     ports:
@@ -153,6 +157,8 @@ services:
       APP__DEBUG: "true"
       DATABASE__HOST: db
       STORAGE__ENDPOINT: minio:9000
+      STORAGE__PUBLIC_ENDPOINT: localhost:9000
+      STORAGE__PUBLIC_SECURE: "false"
       REDIS__HOST: redis
       RUN_MIGRATIONS: "false"
     command:
@@ -188,6 +194,8 @@ services:
     environment:
       DATABASE__HOST: db
       STORAGE__ENDPOINT: minio:9000
+      STORAGE__PUBLIC_ENDPOINT: localhost:9000
+      STORAGE__PUBLIC_SECURE: "false"
       REDIS__HOST: redis
       RUN_MIGRATIONS: "false"
     command:

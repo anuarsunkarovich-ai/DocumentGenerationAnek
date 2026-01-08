@@ -1,0 +1,187 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync dependencies
+        run: uv sync --frozen --dev
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type check
+        run: uv run mypy app tests
+
+      - name: Run test suite
+        run: >
+          uv run pytest tests
+          --ignore=tests/integration/test_service_integration.py
+          --ignore=tests/integration/test_live_stack.py
+
+      - name: Build production image
+        run: docker build --target prod -t documentgenerationanek:ci .
+
+  service-integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync dependencies
+        run: uv sync --frozen --dev
+
+      - name: Stop old containers
+        run: docker compose down -v || true
+
+      - name: Start backing services
+        run: docker compose up -d db minio redis
+
+      - name: Wait for PostgreSQL
+        run: |
+          for attempt in {1..30}; do
+            if docker compose exec -T db pg_isready -U postgres -d lean_generator; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Wait for MinIO
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Run service-backed integration tests
+        env:
+          RUN_SERVICE_INTEGRATION: "1"
+          SERVICE_DATABASE_HOST: 127.0.0.1
+          SERVICE_DATABASE_PORT: "5432"
+          SERVICE_DATABASE_NAME: lean_generator
+          SERVICE_DATABASE_USER: postgres
+          SERVICE_DATABASE_PASSWORD: postgres
+          SERVICE_STORAGE_ENDPOINT: 127.0.0.1:9000
+          SERVICE_STORAGE_PUBLIC_ENDPOINT: 127.0.0.1:9000
+          SERVICE_STORAGE_ACCESS_KEY: minioadmin
+          SERVICE_STORAGE_SECRET_KEY: minioadmin
+          SERVICE_REDIS_HOST: 127.0.0.1
+          SERVICE_REDIS_PORT: "6379"
+        run: uv run pytest tests/integration/test_service_integration.py
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose logs db minio redis
+
+      - name: Tear down backing services
+        if: always()
+        run: docker compose down -v
+
+  live-stack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync dependencies
+        run: uv sync --frozen --dev
+
+      - name: Stop old stack
+        run: docker compose down -v || true
+
+      - name: Build and boot stack from zero
+        run: docker compose up --build -d
+
+      - name: Wait for API readiness
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8000/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs api worker db minio redis
+          exit 1
+
+      - name: Seed smoke-test admin
+        env:
+          DATABASE__HOST: 127.0.0.1
+          DATABASE__PORT: "5432"
+          DATABASE__NAME: lean_generator
+          DATABASE__USER: postgres
+          DATABASE__PASSWORD: postgres
+          STACK_ADMIN_ORG_CODE: smoke-org
+          STACK_ADMIN_ORG_NAME: Smoke Test Org
+          STACK_ADMIN_EMAIL: admin@example.com
+          STACK_ADMIN_PASSWORD: Passw0rd!
+          STACK_ADMIN_FULL_NAME: Smoke Test Admin
+        run: |
+          uv run python scripts/seed_stack_admin.py > seed.json
+          python - <<'PY'
+          import json
+          import os
+
+          with open("seed.json", "r", encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write("RUN_LIVE_STACK=1\n")
+              env_file.write("LIVE_API_BASE_URL=http://127.0.0.1:8000\n")
+              env_file.write(f"LIVE_ADMIN_EMAIL={payload['email']}\n")
+              env_file.write(f"LIVE_ADMIN_PASSWORD={payload['password']}\n")
+              env_file.write(f"LIVE_ORGANIZATION_ID={payload['organization_id']}\n")
+          PY
+
+      - name: Run live stack smoke tests
+        run: uv run pytest tests/integration/test_live_stack.py
+
+      - name: Dump stack logs on failure
+        if: failure()
+        run: docker compose logs api worker db minio redis
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v

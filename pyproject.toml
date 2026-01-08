@@ -53,6 +53,8 @@ testpaths = ["tests"]
 markers = [
     "integration: API-level integration tests",
     "migration: Alembic migration validation tests",
+    "service_integration: tests that use real local infrastructure services",
+    "live_stack: tests that hit a running Docker stack over HTTP",
 ]
 
 [tool.mypy]
