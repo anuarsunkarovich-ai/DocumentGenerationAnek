@@ -172,7 +172,7 @@ services:
       - --queues=document-generation
     volumes:
       - .:/app
-      - api-venv:/app/.venv
+      - worker-venv:/app/.venv
     depends_on:
       db:
         condition: service_healthy
@@ -220,5 +220,6 @@ services:
 
 volumes:
   api-venv:
+  worker-venv:
   postgres-data:
   minio-data:
