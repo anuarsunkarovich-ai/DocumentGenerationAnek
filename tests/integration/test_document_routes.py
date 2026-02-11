@@ -28,12 +28,16 @@ def test_generate_endpoint_returns_task_id(
         background_tasks: BackgroundTasks,
         *,
         current_user_id,
+        current_api_key_id=None,
+        require_published_template: bool = False,
     ) -> DocumentJobResponse:
         """Return a predictable queued job for the route integration test."""
         assert payload.organization_id == organization_id
         assert payload.template_id == template_id
         assert payload.data["student_name"] == "Anek"
         assert current_user_id == authenticated_membership.user_id
+        assert current_api_key_id is None
+        assert require_published_template is False
         assert background_tasks is not None
         return DocumentJobResponse(
             task_id=task_id,

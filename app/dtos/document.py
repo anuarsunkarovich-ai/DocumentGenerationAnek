@@ -41,6 +41,21 @@ class DocumentJobCreateRequest(BaseDTO):
         return value
 
 
+class PublicDocumentJobCreateRequest(BaseDTO):
+    """Public machine-auth payload for creating one generation job."""
+
+    template_id: UUID
+    template_version_id: UUID | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+    constructor: DocumentConstructor
+
+    @field_validator("data")
+    @classmethod
+    def validate_data_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Validate incoming bound data size and key shape."""
+        return DocumentJobCreateRequest.validate_data_payload(value)
+
+
 class DocumentArtifactResponse(BaseDTO):
     """Artifact metadata returned to the frontend."""
 

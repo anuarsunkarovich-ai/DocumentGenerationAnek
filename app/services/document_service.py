@@ -46,7 +46,9 @@ class DocumentService:
         payload: DocumentJobCreateRequest,
         background_tasks: BackgroundTasks,
         *,
-        current_user_id: UUID,
+        current_user_id: UUID | None,
+        current_api_key_id: UUID | None = None,
+        require_published_template: bool = False,
     ) -> DocumentJobResponse:
         """Queue a document job and return the task metadata immediately."""
         _ = background_tasks
@@ -56,6 +58,7 @@ class DocumentService:
                 organization_id=payload.organization_id,
                 template_id=payload.template_id,
                 template_version_id=payload.template_version_id,
+                require_published=require_published_template,
             )
             constructor = DocumentConstructor.model_validate(payload.constructor)
             _, normalized_payload, cache_key = self._variable_mapper.map_document(
@@ -82,6 +85,7 @@ class DocumentService:
                 job_id=job.id,
                 organization_id=job.organization_id,
                 user_id=current_user_id,
+                api_key_id=current_api_key_id,
                 template_version_id=job.template_version_id,
             )
             await audit_service.log_event(
@@ -95,6 +99,7 @@ class DocumentService:
                     "template_version_id": str(job.template_version_id),
                     "cache_key": cache_key,
                     "from_cache": False,
+                    "api_key_id": str(current_api_key_id) if current_api_key_id else None,
                 },
             )
 
@@ -131,6 +136,7 @@ class DocumentService:
                             "template_version_id": str(job.template_version_id),
                             "from_cache": True,
                             "reused_from_job_id": str(cached_job.id),
+                            "api_key_id": str(current_api_key_id) if current_api_key_id else None,
                         },
                     )
                     record_cache_event(hit=True)

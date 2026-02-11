@@ -23,3 +23,7 @@ class AuthenticationError(ApplicationError):
 
 class AuthorizationError(ApplicationError):
     """Raised when an authenticated user lacks access to a resource."""
+
+
+class TooManyRequestsError(ApplicationError):
+    """Raised when a client exceeds configured rate or quota limits."""

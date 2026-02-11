@@ -190,6 +190,19 @@ class WorkerSettings(BaseModel):
     result_expires_seconds: int = 3600
 
 
+class ApiKeySettings(BaseModel):
+    """API-key auth, scopes, and quota settings for public SaaS routes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    header_name: str = "X-API-Key"
+    public_prefix: str = "/public"
+    requests_per_minute_per_key: int = 120
+    requests_per_minute_per_org: int = 600
+    requests_per_day_per_key: int = 5000
+    requests_per_day_per_org: int = 50000
+
+
 class ObservabilitySettings(BaseModel):
     """Structured logging, metrics, and error-reporting settings."""
 
@@ -229,6 +242,7 @@ class Settings(BaseSettings):
     generation: GenerationSettings = Field(default_factory=GenerationSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
+    api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     paths: PathsSettings = Field(default_factory=PathsSettings)
 

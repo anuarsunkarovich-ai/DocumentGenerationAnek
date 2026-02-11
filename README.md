@@ -99,6 +99,7 @@ Production profile:
 - Minimal starter endpoints for health, templates, and document jobs
 - Internal JWT auth with hashed passwords and revocable refresh sessions
 - Membership-based tenancy with role-driven authorization
+- Public machine-to-machine API routes secured by scoped API keys
 - Structured request/job logging, Prometheus metrics, and optional Sentry integration
 
 ## Configuration
@@ -112,6 +113,7 @@ The backend reads environment configuration through nested Pydantic settings in 
 - `redis`: Celery broker/result connectivity
 - `generation`: upload, rendering, cache, and block-size limits
 - `worker`: queue name, retries, backoff, and stale-job recovery windows
+- `api_keys`: public API header name and per-key/per-org rate limits
 - `observability`: request IDs, correlation headers, and Sentry options
 - `paths`: local fallback directories for templates, artifacts, and temp files
 
@@ -177,13 +179,13 @@ Document jobs now follow a real lifecycle and are executed through Celery worker
 
 The API contract stays the same, but generation now leaves the API process immediately after enqueue. Workers claim queued jobs in the database, retry transient failures with backoff, and recover stale `processing` jobs after worker restarts. When the template version and normalized payload hash match a recent completed job, the backend reuses cached artifacts instead of regenerating the document.
 
-All template and document routes are protected by bearer auth. The backend now derives actor fields such as `requested_by_user_id` and `created_by_user_id` from the authenticated user instead of trusting client input.
+Internal template and document routes are protected by bearer auth. Public SaaS routes under `/api/v1/public` use `X-API-Key` machine auth with per-key scopes and rate limits. The backend derives actor fields such as `requested_by_user_id` and `created_by_user_id` from the authenticated user or API key context instead of trusting client input.
 
 Observability is available through structured logs, `/metrics`, `/health/live`, `/health/ready`, and admin diagnostics routes under `/api/v1/admin/diagnostics`.
 
 ## Multi-Tenancy
 
-Templates, template versions, document jobs, artifacts, and audit logs are modeled with `organization_id`. Until authentication middleware is added, tenant-sensitive reads are explicitly scoped by `organization_id` at the API boundary and enforced again in repository lookups.
+Templates, template versions, document jobs, artifacts, audit logs, and API keys are modeled with `organization_id`. Browser routes still accept explicit `organization_id` selection and validate it against the authenticated user's active memberships. Public API-key routes derive tenant context from the API key and do not trust client-supplied organization identifiers.
 
 ## Validation and Security
 

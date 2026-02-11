@@ -35,7 +35,7 @@ def test_alembic_has_single_head_revision() -> None:
     """Ensure the migration history stays linear until branching is intentional."""
     script_directory = ScriptDirectory.from_config(build_alembic_config())
 
-    assert script_directory.get_heads() == ["d7f1c3a8b5e2"]
+    assert script_directory.get_heads() == ["e1a2c4d6f890"]
 
 
 def test_alembic_offline_upgrade_renders_sql() -> None:
@@ -49,6 +49,8 @@ def test_alembic_offline_upgrade_renders_sql() -> None:
     assert "CREATE TABLE document_jobs" in rendered
     assert "CREATE TABLE auth_sessions" in rendered
     assert "CREATE TABLE organization_memberships" in rendered
+    assert "CREATE TABLE api_keys" in rendered
+    assert "CREATE TABLE api_key_usage_logs" in rendered
     assert rendered.count("CREATE TYPE user_role") == 1
     assert rendered.count("CREATE TYPE template_status") == 1
     assert rendered.count("CREATE TYPE document_job_status") == 1

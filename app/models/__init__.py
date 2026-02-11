@@ -1,5 +1,7 @@
 """Persistence models package."""
 
+from app.models.api_key import ApiKey
+from app.models.api_key_usage_log import ApiKeyUsageLog
 from app.models.audit_log import AuditLog
 from app.models.auth_session import AuthSession
 from app.models.base import Base
@@ -14,6 +16,8 @@ from app.models.user import User
 
 __all__ = [
     "AuditLog",
+    "ApiKey",
+    "ApiKeyUsageLog",
     "AuthSession",
     "Base",
     "DOMAIN_VOCABULARY",

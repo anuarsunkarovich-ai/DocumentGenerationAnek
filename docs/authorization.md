@@ -43,3 +43,12 @@ Each helper:
 - Document generation routes require generation access.
 - Job status/download/preview routes require read access.
 - Routes without explicit org selection use the authenticated user's default membership.
+
+## Machine Access
+
+Public SaaS routes under `/api/v1/public` use API keys instead of browser JWTs.
+
+- API keys belong to one organization.
+- Public routes derive organization context from the key instead of accepting `organization_id`.
+- Scopes gate access to template reads, document generation, document reads, and audit reads.
+- Per-key and per-organization rate limits are enforced before route logic runs.

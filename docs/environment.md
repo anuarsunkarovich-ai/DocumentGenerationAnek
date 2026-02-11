@@ -117,6 +117,17 @@ Notes:
 | `WORKER__STALE_JOB_RECOVERY_BATCH_SIZE` | max stale jobs recovered per scan | `100` |
 | `WORKER__RESULT_EXPIRES_SECONDS` | retention period for Celery result metadata | `3600` |
 
+## API Key Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `API_KEYS__HEADER_NAME` | header used for public machine auth | `X-API-Key` |
+| `API_KEYS__PUBLIC_PREFIX` | public machine-route prefix | `/public` |
+| `API_KEYS__REQUESTS_PER_MINUTE_PER_KEY` | minute-level limit for one API key | `120` |
+| `API_KEYS__REQUESTS_PER_MINUTE_PER_ORG` | minute-level shared limit for one organization | `600` |
+| `API_KEYS__REQUESTS_PER_DAY_PER_KEY` | daily quota for one API key | `5000` |
+| `API_KEYS__REQUESTS_PER_DAY_PER_ORG` | daily shared quota for one organization | `50000` |
+
 ## Observability Settings
 
 | Variable | Meaning | Default |
@@ -142,5 +153,6 @@ Frontend work usually only needs these values:
 - auth token storage and refresh behavior derived from `AUTH__ACCESS_TOKEN_TTL_MINUTES` and `AUTH__REFRESH_TOKEN_TTL_DAYS`
 - the Celery/Redis worker topology driven by `REDIS__*` and `WORKER__*`
 - request/correlation headers controlled by `OBSERVABILITY__REQUEST_ID_HEADER` and `OBSERVABILITY__CORRELATION_ID_HEADER`
+- public API-key authentication and quotas controlled by `API_KEYS__*`
 - the host/port where the backend is running
 - the MinIO-presigned URL behavior indirectly used by download endpoints

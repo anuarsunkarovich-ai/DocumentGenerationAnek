@@ -47,3 +47,6 @@ class AuditAction(StrEnum):
     DOCUMENT_JOB_COMPLETED = "document_job_completed"
     DOCUMENT_JOB_FAILED = "document_job_failed"
     ARTIFACT_CREATED = "artifact_created"
+    API_KEY_CREATED = "api_key_created"
+    API_KEY_ROTATED = "api_key_rotated"
+    API_KEY_REVOKED = "api_key_revoked"

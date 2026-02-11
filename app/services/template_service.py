@@ -46,11 +46,16 @@ class TemplateService:
     async def list_templates(
         self,
         organization_id: UUID,
+        *,
+        published_only: bool = False,
     ) -> TemplateListResponse:
         """Return templates visible to the selected tenant."""
         async with get_transaction_session() as session:
             template_repository = TemplateRepository(session)
-            templates = await template_repository.list_all(organization_id=organization_id)
+            templates = await template_repository.list_all(
+                organization_id=organization_id,
+                published_only=published_only,
+            )
             return TemplateListResponse(
                 items=[self._serialize_template(template) for template in templates]
             )
@@ -60,6 +65,7 @@ class TemplateService:
         *,
         organization_id: UUID,
         template_id: UUID,
+        published_only: bool = False,
     ) -> TemplateDetailResponse:
         """Return one template with version details."""
         async with get_transaction_session() as session:
@@ -67,9 +73,12 @@ class TemplateService:
             template = await template_repository.get_by_id(
                 template_id=template_id,
                 organization_id=organization_id,
+                published_only=published_only,
             )
             if template is None:
                 raise NotFoundError("Template was not found.")
+            if published_only:
+                template.versions = [version for version in template.versions if version.is_published]
             return self._serialize_template_detail(template)
 
     async def extract_schema_for_template(

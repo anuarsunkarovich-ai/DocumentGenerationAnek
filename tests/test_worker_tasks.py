@@ -190,7 +190,15 @@ async def test_document_generation_service_skips_duplicate_claim(monkeypatch) ->
         def __init__(self, session: object) -> None:
             _ = session
 
-        async def resolve(self, *, organization_id, template_id, template_version_id):
+        async def resolve(
+            self,
+            *,
+            organization_id,
+            template_id,
+            template_version_id,
+            require_published: bool = False,
+        ):
+            assert require_published is False
             assert organization_id == context.organization_id
             assert template_id == context.template_id
             assert template_version_id == context.template_version_id
@@ -260,7 +268,15 @@ async def test_document_generation_service_requeues_retryable_failure(monkeypatc
         def __init__(self, session: object) -> None:
             _ = session
 
-        async def resolve(self, *, organization_id, template_id, template_version_id):
+        async def resolve(
+            self,
+            *,
+            organization_id,
+            template_id,
+            template_version_id,
+            require_published: bool = False,
+        ):
+            assert require_published is False
             assert organization_id == context.organization_id
             assert template_id == context.template_id
             assert template_version_id == context.template_version_id
@@ -341,7 +357,15 @@ async def test_document_generation_service_marks_permanent_failure(monkeypatch) 
         def __init__(self, session: object) -> None:
             _ = session
 
-        async def resolve(self, *, organization_id, template_id, template_version_id):
+        async def resolve(
+            self,
+            *,
+            organization_id,
+            template_id,
+            template_version_id,
+            require_published: bool = False,
+        ):
+            assert require_published is False
             assert organization_id == context.organization_id
             assert template_id == context.template_id
             assert template_version_id == context.template_version_id
@@ -393,7 +417,15 @@ async def test_document_service_enqueues_generation_job(monkeypatch) -> None:
         def __init__(self, session: object) -> None:
             _ = session
 
-        async def resolve(self, *, organization_id, template_id, template_version_id):
+        async def resolve(
+            self,
+            *,
+            organization_id,
+            template_id,
+            template_version_id,
+            require_published: bool = False,
+        ):
+            assert require_published is False
             assert organization_id == context.organization_id
             assert template_id == context.template_id
             assert template_version_id == context.template_version_id

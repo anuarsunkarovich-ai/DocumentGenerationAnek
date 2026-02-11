@@ -25,13 +25,17 @@ class DocumentController:
         payload: DocumentJobCreateRequest,
         background_tasks: BackgroundTasks,
         *,
-        current_user_id: UUID,
+        current_user_id: UUID | None,
+        current_api_key_id: UUID | None = None,
+        require_published_template: bool = False,
     ) -> DocumentJobResponse:
         """Create a document generation job."""
         return await self._service.create_job(
             payload,
             background_tasks,
             current_user_id=current_user_id,
+            current_api_key_id=current_api_key_id,
+            require_published_template=require_published_template,
         )
 
     async def get_job_status(

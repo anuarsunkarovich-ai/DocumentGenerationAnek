@@ -26,11 +26,13 @@ class TemplateResolverService:
         organization_id: UUID,
         template_id: UUID,
         template_version_id: UUID | None,
+        require_published: bool = False,
     ) -> ResolvedTemplateContext:
         """Resolve the requested template and generation version."""
         template = await self._template_repository.get_by_id(
             template_id=template_id,
             organization_id=organization_id,
+            published_only=require_published,
         )
         if template is None:
             raise NotFoundError("Template was not found.")
@@ -45,6 +47,8 @@ class TemplateResolverService:
             )
 
         if template_version is None or template_version.template_id != template.id:
+            raise NotFoundError("Template version was not found.")
+        if require_published and not template_version.is_published:
             raise NotFoundError("Template version was not found.")
 
         return self._to_context(template=template, template_version=template_version)

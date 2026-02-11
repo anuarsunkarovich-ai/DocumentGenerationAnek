@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.responses import Response as StarletteResponse
 
+from app.api.middleware.api_key_usage import ApiKeyUsageMiddleware
 from app.api.middleware.observability import ObservabilityMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
@@ -17,6 +18,7 @@ from app.core.exceptions import (
     AuthorizationError,
     ConflictError,
     NotFoundError,
+    TooManyRequestsError,
     ValidationError,
 )
 from app.core.logging import configure_logging
@@ -54,6 +56,7 @@ def create_application() -> FastAPI:
         lifespan=application_lifespan,
     )
     application.add_middleware(ObservabilityMiddleware)
+    application.add_middleware(ApiKeyUsageMiddleware)
     application.add_exception_handler(ApplicationError, application_error_handler)
     application.include_router(api_router, prefix=settings.app.api_prefix)
 
@@ -107,6 +110,8 @@ async def application_error_handler(
         status_code = 401
     elif isinstance(error, AuthorizationError):
         status_code = 403
+    elif isinstance(error, TooManyRequestsError):
+        status_code = 429
     else:
         status_code = 400
 

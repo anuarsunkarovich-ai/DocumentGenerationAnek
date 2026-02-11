@@ -10,6 +10,7 @@ _correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=N
 _job_id: ContextVar[str | None] = ContextVar("job_id", default=None)
 _organization_id: ContextVar[str | None] = ContextVar("organization_id", default=None)
 _user_id: ContextVar[str | None] = ContextVar("user_id", default=None)
+_api_key_id: ContextVar[str | None] = ContextVar("api_key_id", default=None)
 _template_version_id: ContextVar[str | None] = ContextVar("template_version_id", default=None)
 
 _CONTEXT_VARS = {
@@ -18,6 +19,7 @@ _CONTEXT_VARS = {
     "job_id": _job_id,
     "organization_id": _organization_id,
     "user_id": _user_id,
+    "api_key_id": _api_key_id,
     "template_version_id": _template_version_id,
 }
 
@@ -38,6 +40,7 @@ def bind_context(
     job_id: UUID | str | None = None,
     organization_id: UUID | str | None = None,
     user_id: UUID | str | None = None,
+    api_key_id: UUID | str | None = None,
     template_version_id: UUID | str | None = None,
 ) -> None:
     """Bind one or more fields into the current request/task context."""
@@ -47,6 +50,7 @@ def bind_context(
         "job_id": job_id,
         "organization_id": organization_id,
         "user_id": user_id,
+        "api_key_id": api_key_id,
         "template_version_id": template_version_id,
     }
     for key, value in values.items():
@@ -58,6 +62,7 @@ def bind_request_state(
     request: Request,
     *,
     user_id: UUID | str | None = None,
+    api_key_id: UUID | str | None = None,
     organization_id: UUID | str | None = None,
     template_version_id: UUID | str | None = None,
     job_id: UUID | str | None = None,
@@ -65,6 +70,7 @@ def bind_request_state(
     """Mirror selected context fields onto request state for downstream handlers."""
     bind_context(
         user_id=user_id,
+        api_key_id=api_key_id,
         organization_id=organization_id,
         template_version_id=template_version_id,
         job_id=job_id,
@@ -73,6 +79,8 @@ def bind_request_state(
         request.state.user_id = _normalize(user_id)
     if organization_id is not None:
         request.state.organization_id = _normalize(organization_id)
+    if api_key_id is not None:
+        request.state.api_key_id = _normalize(api_key_id)
     if template_version_id is not None:
         request.state.template_version_id = _normalize(template_version_id)
     if job_id is not None:
@@ -93,6 +101,7 @@ def get_context() -> dict[str, str | None]:
         "job_id": _job_id.get(),
         "organization_id": _organization_id.get(),
         "user_id": _user_id.get(),
+        "api_key_id": _api_key_id.get(),
         "template_version_id": _template_version_id.get(),
     }
 

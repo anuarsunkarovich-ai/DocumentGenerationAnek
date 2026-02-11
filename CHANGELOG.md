@@ -9,3 +9,6 @@ Release notes for API, authentication, and operational changes.
 - `POST /api/v1/templates/upload` and `POST /api/v1/templates/register` no longer accept `created_by_user_id`; the backend derives it from the authenticated user.
 - Organization access is now validated through active memberships instead of trusting a matching `users.organization_id` alone.
 - Auth responses now expose organization memberships so clients can present valid tenant choices.
+- Public SaaS routes are now available under `/api/v1/public/*` and are authenticated with scoped API keys via `X-API-Key`.
+- API-key management and usage diagnostics are now available under `/api/v1/admin/api-keys`.
+- Public API requests now enforce per-key and per-organization rate limits and persist usage records with request and correlation identifiers.

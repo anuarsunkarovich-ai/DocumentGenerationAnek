@@ -16,7 +16,7 @@ class TemplateRepository:
         """Store the active database session."""
         self._session = session
 
-    async def list_all(self, organization_id: UUID) -> list[Template]:
+    async def list_all(self, organization_id: UUID, *, published_only: bool = False) -> list[Template]:
         """Return templates for one organization."""
         statement: Select[tuple[Template]] = (
             select(Template)
@@ -24,6 +24,13 @@ class TemplateRepository:
             .order_by(Template.created_at.desc())
             .where(Template.organization_id == organization_id)
         )
+        if published_only:
+            from app.models.template_version import TemplateVersion
+
+            statement = statement.join(TemplateVersion).where(
+                TemplateVersion.is_current.is_(True),
+                TemplateVersion.is_published.is_(True),
+            )
 
         result = await self._session.execute(statement)
         return list(result.scalars().unique().all())
@@ -46,7 +53,13 @@ class TemplateRepository:
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
 
-    async def get_by_id(self, *, template_id: UUID, organization_id: UUID) -> Template | None:
+    async def get_by_id(
+        self,
+        *,
+        template_id: UUID,
+        organization_id: UUID,
+        published_only: bool = False,
+    ) -> Template | None:
         """Return a template by identifier within one organization."""
         statement: Select[tuple[Template]] = (
             select(Template)
@@ -56,6 +69,13 @@ class TemplateRepository:
                 Template.organization_id == organization_id,
             )
         )
+        if published_only:
+            from app.models.template_version import TemplateVersion
+
+            statement = statement.join(TemplateVersion).where(
+                TemplateVersion.is_current.is_(True),
+                TemplateVersion.is_published.is_(True),
+            )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
 

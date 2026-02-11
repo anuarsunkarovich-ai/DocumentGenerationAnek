@@ -24,20 +24,27 @@ class TemplateController:
     async def list_templates(
         self,
         organization_id: UUID,
+        *,
+        published_only: bool = False,
     ) -> TemplateListResponse:
         """Return the currently registered templates."""
-        return await self._service.list_templates(organization_id=organization_id)
+        return await self._service.list_templates(
+            organization_id=organization_id,
+            published_only=published_only,
+        )
 
     async def get_template(
         self,
         *,
         organization_id: UUID,
         template_id: UUID,
+        published_only: bool = False,
     ) -> TemplateDetailResponse:
         """Return one template with version details."""
         return await self._service.get_template(
             organization_id=organization_id,
             template_id=template_id,
+            published_only=published_only,
         )
 
     async def extract_schema_for_template(

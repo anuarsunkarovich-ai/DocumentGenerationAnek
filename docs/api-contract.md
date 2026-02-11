@@ -4,12 +4,14 @@
 
 - Base prefix: `/api/v1`
 - JSON requests and responses use Pydantic DTOs with strict validation
-- tenant-sensitive routes require `organization_id`
+- internal tenant-sensitive routes require `organization_id`
 - document generation is asynchronous
 - queued jobs are executed by Celery workers using Redis as the broker and result backend
-- all template and document routes require `Authorization: Bearer <access_token>`
+- internal template and document routes require `Authorization: Bearer <access_token>`
+- public machine routes live under `/api/v1/public/*` and require `X-API-Key: <plaintext-key>`
 - actor identifiers on protected routes are derived from the authenticated user, not trusted from client input
 - `organization_id` selections on protected routes are validated against active organization memberships
+- public API-key routes derive `organization_id` from the authenticated key and do not accept tenant selection from clients
 
 ## Health
 
@@ -103,6 +105,67 @@ Protected route. Revokes the supplied refresh token for the authenticated user.
 ### `GET /api/v1/auth/me`
 
 Protected route. Returns the authenticated user profile and organization summary.
+
+## API Keys
+
+### `POST /api/v1/admin/api-keys`
+
+Admin-only route for creating one machine key.
+
+Request body:
+
+```json
+{
+  "organization_id": "uuid",
+  "name": "Production integration",
+  "scopes": ["templates:read", "documents:generate", "documents:read"]
+}
+```
+
+Response:
+
+```json
+{
+  "api_key": "lgk_...",
+  "metadata": {
+    "id": "uuid",
+    "organization_id": "uuid",
+    "name": "Production integration",
+    "key_prefix": "lgk_abcd1234",
+    "scopes": ["documents:generate", "documents:read", "templates:read"],
+    "status": "active",
+    "rotated_at": null,
+    "last_used_at": null,
+    "revoked_at": null,
+    "created_at": "2026-02-01T09:00:00Z"
+  }
+}
+```
+
+The plaintext key is returned only on create and rotate.
+
+### `GET /api/v1/admin/api-keys?organization_id=<uuid>`
+
+Admin-only route. Lists API keys for one organization.
+
+### `POST /api/v1/admin/api-keys/{api_key_id}/rotate?organization_id=<uuid>`
+
+Admin-only route. Rotates a key and returns a fresh plaintext secret once.
+
+### `POST /api/v1/admin/api-keys/{api_key_id}/revoke?organization_id=<uuid>`
+
+Admin-only route. Revokes a key.
+
+### `GET /api/v1/admin/api-keys/usage?organization_id=<uuid>&limit=25`
+
+Admin-only route. Returns recent API-key request logs for one organization.
+
+Supported scopes:
+
+- `templates:read`
+- `documents:generate`
+- `documents:read`
+- `audit:read`
 
 ## Templates
 
@@ -383,6 +446,78 @@ Returns the preferred download artifact, currently PDF first and DOCX second.
 
 Returns the preferred preview artifact, currently PDF first and DOCX second.
 
+## Public API
+
+Public SaaS routes are machine-authenticated and tenant-scoped by API key.
+
+### `GET /api/v1/public/templates`
+
+List published templates visible to the API key's organization.
+
+### `GET /api/v1/public/templates/{template_id}`
+
+Return one published template for the API key's organization.
+
+### `GET /api/v1/public/documents/constructor-schema`
+
+Return the constructor schema for machine clients with `documents:generate`.
+
+### `POST /api/v1/public/documents/generate`
+
+Alias of `POST /api/v1/public/documents/jobs`.
+
+Request body:
+
+```json
+{
+  "template_id": "uuid",
+  "template_version_id": "uuid",
+  "data": {
+    "student_name": "Anek"
+  },
+  "constructor": {
+    "blocks": [
+      {
+        "type": "text",
+        "id": "text-1",
+        "binding": {
+          "key": "student_name"
+        }
+      }
+    ]
+  }
+}
+```
+
+Differences from internal browser routes:
+
+- `organization_id` is omitted and derived from the API key
+- only published templates and published template versions are allowed
+- `requested_by_user_id` is `null` because the request is machine-authenticated
+
+### `GET /api/v1/public/documents/jobs/{task_id}`
+
+Return job status for the API key's organization. Requires `documents:read`.
+
+### `GET /api/v1/public/documents/jobs/{task_id}/download`
+
+Return the preferred artifact plus a presigned download URL. Requires `documents:read`.
+
+### `GET /api/v1/public/documents/jobs/{task_id}/preview`
+
+Return the preferred preview artifact. Requires `documents:read`.
+
+### `GET /api/v1/public/audit/events`
+
+Return recent audit events for the API key's organization. Requires `audit:read`.
+
+Public-route responses also honor:
+
+- `X-Request-ID`
+- `X-Correlation-ID`
+
+Rate limits and quotas are applied per API key and per organization. Exceeded limits return `429`.
+
 ## Error Shape
 
 Domain-level failures return:
@@ -426,3 +561,4 @@ Returns worker availability and current queue depth.
 3. Treat `task_id` as the stable polling identifier.
 4. Do not build storage URLs yourself; use the returned artifact URLs.
 5. Expect `from_cache=true` on very fast repeated generation runs.
+6. For server-to-server integrations, use `/api/v1/public/*` routes with `X-API-Key` instead of browser bearer tokens.

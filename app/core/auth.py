@@ -93,3 +93,18 @@ def generate_refresh_token() -> str:
 def hash_refresh_token(token: str) -> str:
     """Hash a refresh token before persisting it."""
     return sha256(token.encode("utf-8")).hexdigest()
+
+
+def generate_api_key() -> str:
+    """Generate an opaque API key for machine-to-machine auth."""
+    return f"lgk_{token_urlsafe(32)}"
+
+
+def hash_api_key(api_key: str) -> str:
+    """Hash an API key before persisting it."""
+    return sha256(api_key.encode("utf-8")).hexdigest()
+
+
+def api_key_prefix(api_key: str) -> str:
+    """Return a short visible prefix for operator-facing key listings."""
+    return api_key[:12]

@@ -76,7 +76,13 @@ def test_viewer_can_read_templates(monkeypatch) -> None:
     """Ensure viewers retain read access to template listings."""
     user = build_current_user(role=UserRole.VIEWER)
 
-    async def fake_list_templates(self: TemplateService, organization_id):
+    async def fake_list_templates(
+        self: TemplateService,
+        organization_id,
+        *,
+        published_only: bool = False,
+    ):
+        assert published_only is False
         return {"items": []}
 
     monkeypatch.setattr(TemplateService, "list_templates", fake_list_templates)
@@ -100,9 +106,13 @@ def test_operator_can_generate_documents(monkeypatch) -> None:
         background_tasks: BackgroundTasks,
         *,
         current_user_id,
+        current_api_key_id=None,
+        require_published_template: bool = False,
     ) -> DocumentJobResponse:
         assert payload.organization_id == user.organization_id
         assert current_user_id == user.id
+        assert current_api_key_id is None
+        assert require_published_template is False
         assert background_tasks is not None
         return DocumentJobResponse(
             task_id=task_id,
