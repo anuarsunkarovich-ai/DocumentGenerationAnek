@@ -24,6 +24,7 @@ from app.models.template_version import TemplateVersion
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.template_repository import TemplateRepository
 from app.repositories.template_version_repository import TemplateVersionRepository
+from app.services.billing_service import BillingService
 from app.services.security_service import SecurityService
 from app.services.storage import StorageService, get_storage_service
 from app.services.template_schema_service import TemplateSchemaService
@@ -42,6 +43,7 @@ class TemplateService:
         self._storage_service = storage_service or get_storage_service()
         self._schema_service = schema_service or TemplateSchemaService()
         self._security_service = security_service or SecurityService()
+        self._billing_service = BillingService()
 
     async def list_templates(
         self,
@@ -156,9 +158,15 @@ class TemplateService:
                 organization = await organization_repository.get_by_id(organization_id)
                 if organization is None:
                     raise NotFoundError("Organization was not found.")
+                await self._billing_service.enforce_storage_delta_allowed(
+                    organization_id=organization_id,
+                    additional_bytes=len(content),
+                    session=session,
+                )
 
                 template = await self._get_or_create_template(
                     template_repository=template_repository,
+                    session=session,
                     organization_id=organization_id,
                     name=name,
                     code=code,
@@ -191,6 +199,7 @@ class TemplateService:
                         version=version,
                         original_filename=safe_file_name,
                         storage_key=storage_object.key,
+                        size_bytes=len(content),
                         checksum=checksum,
                         variable_schema=schema.model_dump(mode="json"),
                         component_schema=[
@@ -200,6 +209,15 @@ class TemplateService:
                         is_published=publish,
                         is_current=True,
                     )
+                )
+                await self._billing_service.record_storage_usage(
+                    organization_id=organization_id,
+                    delta_bytes=len(content),
+                    session=session,
+                )
+                await self._billing_service.sync_template_count(
+                    organization_id=organization_id,
+                    session=session,
                 )
         except Exception:
             if storage_object_key is not None:
@@ -233,6 +251,11 @@ class TemplateService:
                 organization_code=organization.code,
             )
             content = await self._storage_service.download_bytes(safe_storage_key)
+            await self._billing_service.enforce_storage_delta_allowed(
+                organization_id=payload.organization_id,
+                additional_bytes=len(content),
+                session=session,
+            )
             safe_file_name = self._security_service.validate_template_upload(
                 file_name=payload.original_filename,
                 content_type=None,
@@ -243,6 +266,7 @@ class TemplateService:
 
             template = await self._get_or_create_template(
                 template_repository=template_repository,
+                session=session,
                 organization_id=payload.organization_id,
                 name=payload.name,
                 code=payload.code,
@@ -264,6 +288,7 @@ class TemplateService:
                     version=payload.version,
                     original_filename=safe_file_name,
                     storage_key=safe_storage_key,
+                    size_bytes=len(content),
                     checksum=checksum,
                     variable_schema=schema.model_dump(mode="json"),
                     component_schema=[
@@ -273,6 +298,15 @@ class TemplateService:
                     is_published=payload.publish,
                     is_current=True,
                 )
+            )
+            await self._billing_service.record_storage_usage(
+                organization_id=payload.organization_id,
+                delta_bytes=len(content),
+                session=session,
+            )
+            await self._billing_service.sync_template_count(
+                organization_id=payload.organization_id,
+                session=session,
             )
 
         return self._build_ingestion_response(
@@ -298,6 +332,7 @@ class TemplateService:
         self,
         *,
         template_repository: TemplateRepository,
+        session,
         organization_id: UUID,
         name: str,
         code: str,
@@ -314,6 +349,11 @@ class TemplateService:
             template.description = description
             template.status = TemplateStatus.ACTIVE
             return template
+
+        await self._billing_service.enforce_template_creation_allowed(
+            organization_id=organization_id,
+            session=session,
+        )
 
         return await template_repository.create(
             Template(

@@ -393,6 +393,7 @@ Backend execution note:
 - the HTTP contract is unchanged by the worker move
 - API nodes now enqueue a Celery task and return immediately
 - workers recover stale `processing` jobs after restarts and retry transient failures with backoff
+- plan enforcement may reject generation with `409` when the organization exceeds its monthly cap, storage quota, or feature entitlement
 
 Response headers:
 
@@ -533,6 +534,8 @@ Typical statuses:
 - `404` not found
 - `409` conflict
 - `422` validation failure
+
+Plan and billing enforcement also use `409` for business-limit failures such as generation caps, template caps, storage quota, and unsupported premium features.
 
 ## Admin Diagnostics
 

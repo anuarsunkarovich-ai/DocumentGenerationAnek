@@ -100,6 +100,7 @@ Production profile:
 - Internal JWT auth with hashed passwords and revocable refresh sessions
 - Membership-based tenancy with role-driven authorization
 - Public machine-to-machine API routes secured by scoped API keys
+- Per-organization plans with monthly metering and service-boundary limit enforcement
 - Structured request/job logging, Prometheus metrics, and optional Sentry integration
 
 ## Configuration
@@ -114,6 +115,7 @@ The backend reads environment configuration through nested Pydantic settings in 
 - `generation`: upload, rendering, cache, and block-size limits
 - `worker`: queue name, retries, backoff, and stale-job recovery windows
 - `api_keys`: public API header name and per-key/per-org rate limits
+- billing data is modeled in the database and enforced in service logic, with a seeded default starter plan
 - `observability`: request IDs, correlation headers, and Sentry options
 - `paths`: local fallback directories for templates, artifacts, and temp files
 

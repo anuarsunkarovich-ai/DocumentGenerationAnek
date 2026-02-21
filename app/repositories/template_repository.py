@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -85,3 +85,9 @@ class TemplateRepository:
         await self._session.flush()
         await self._session.refresh(template)
         return template
+
+    async def count_by_organization(self, organization_id: UUID) -> int:
+        """Return the number of logical templates for one organization."""
+        statement = select(func.count(Template.id)).where(Template.organization_id == organization_id)
+        result = await self._session.execute(statement)
+        return int(result.scalar_one())

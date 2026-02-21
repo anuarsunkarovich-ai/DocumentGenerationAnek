@@ -20,6 +20,7 @@ from app.dtos.constructor import DocumentConstructor
 from app.models.enums import AuditAction
 from app.repositories.document_repository import DocumentRepository
 from app.services.audit_service import AuditService
+from app.services.billing_service import BillingService
 from app.services.generation.artifact_service import ArtifactService
 from app.services.generation.document_composer_service import DocumentComposerService
 from app.services.generation.pdf_render_service import PdfRenderService
@@ -49,6 +50,7 @@ class DocumentGenerationService:
         self._composer = DocumentComposerService()
         self._pdf_renderer = PdfRenderService()
         self._settings = get_settings()
+        self._billing_service = BillingService()
 
     async def process_job(self, job_id: UUID) -> bool:
         """Process a queued job end to end in the background."""
@@ -115,6 +117,11 @@ class DocumentGenerationService:
 
                 audit_service = AuditService(session)
                 artifact_service = ArtifactService(session, self._storage_service)
+                await self._billing_service.enforce_storage_delta_allowed(
+                    organization_id=job.organization_id,
+                    additional_bytes=len(docx_bytes) + len(pdf_bytes),
+                    session=session,
+                )
                 await artifact_service.store_docx(
                     context=context,
                     job_id=job.id,

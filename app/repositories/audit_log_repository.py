@@ -1,5 +1,6 @@
 """Repository for audit log persistence."""
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import Select, select
@@ -47,6 +48,7 @@ class AuditLogRepository:
         *,
         organization_id: UUID,
         limit: int,
+        created_after: datetime | None = None,
     ) -> list[AuditLog]:
         """Return recent audit log entries for one organization."""
         statement: Select[tuple[AuditLog]] = (
@@ -55,5 +57,7 @@ class AuditLogRepository:
             .order_by(AuditLog.created_at.desc())
             .limit(limit)
         )
+        if created_after is not None:
+            statement = statement.where(AuditLog.created_at >= created_after)
         result = await self._session.execute(statement)
         return list(result.scalars().all())

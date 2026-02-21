@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document_artifact import DocumentArtifact
@@ -58,3 +58,11 @@ class DocumentArtifactRepository:
                 if artifact.kind == kind:
                     return artifact
         return None
+
+    async def sum_storage_bytes_for_organization(self, organization_id: UUID) -> int:
+        """Return the total stored artifact bytes for one organization."""
+        statement = select(func.coalesce(func.sum(DocumentArtifact.size_bytes), 0)).where(
+            DocumentArtifact.organization_id == organization_id
+        )
+        result = await self._session.execute(statement)
+        return int(result.scalar_one() or 0)

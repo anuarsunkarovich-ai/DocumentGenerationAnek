@@ -1,6 +1,7 @@
 """Operational diagnostics and infrastructure status helpers."""
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import cast
 
 from redis import Redis
@@ -21,6 +22,7 @@ from app.dtos.admin import (
 from app.dtos.health import HealthDependencyResponse, HealthResponse, LiveHealthResponse
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.document_repository import DocumentRepository
+from app.services.billing_service import BillingService
 from app.services.storage import get_storage_service
 
 
@@ -29,6 +31,7 @@ class OperationsService:
 
     def __init__(self) -> None:
         self._settings = get_settings()
+        self._billing_service = BillingService()
 
     async def get_liveness(self) -> LiveHealthResponse:
         """Return a process-only liveness response."""
@@ -103,9 +106,14 @@ class OperationsService:
     ) -> AuditEventListResponse:
         """Return recent audit events for one organization."""
         async with get_transaction_session() as session:
+            retention_days = await self._billing_service.get_audit_retention_days(
+                organization_id=organization_id,
+                session=session,
+            )
             events = await AuditLogRepository(session).list_recent(
                 organization_id=organization_id,
                 limit=limit,
+                created_after=datetime.now(timezone.utc) - timedelta(days=retention_days),
             )
             return AuditEventListResponse(
                 items=[

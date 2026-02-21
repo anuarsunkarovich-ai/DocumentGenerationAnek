@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.template_version import TemplateVersion
@@ -75,3 +75,16 @@ class TemplateVersionRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def sum_storage_bytes_for_organization(self, organization_id: UUID) -> int:
+        """Return the total stored template-version bytes for one organization."""
+        from app.models.template import Template
+
+        statement = (
+            select(func.coalesce(func.sum(TemplateVersion.size_bytes), 0))
+            .select_from(TemplateVersion)
+            .join(Template, Template.id == TemplateVersion.template_id)
+            .where(Template.organization_id == organization_id)
+        )
+        result = await self._session.execute(statement)
+        return int(result.scalar_one() or 0)

@@ -12,3 +12,5 @@ Release notes for API, authentication, and operational changes.
 - Public SaaS routes are now available under `/api/v1/public/*` and are authenticated with scoped API keys via `X-API-Key`.
 - API-key management and usage diagnostics are now available under `/api/v1/admin/api-keys`.
 - Public API requests now enforce per-key and per-organization rate limits and persist usage records with request and correlation identifiers.
+- Organizations now default onto a seeded per-organization plan model with monthly usage meters.
+- Document generation, template creation, storage growth, signature-block usage, and audit retention are now constrained by plan enforcement at the service boundary.

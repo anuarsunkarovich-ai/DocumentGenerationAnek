@@ -11,6 +11,7 @@ from app.models.document_artifact import DocumentArtifact
 from app.models.enums import ArtifactKind, AuditAction
 from app.repositories.document_artifact_repository import DocumentArtifactRepository
 from app.services.audit_service import AuditService
+from app.services.billing_service import BillingService
 from app.services.generation.models import ResolvedTemplateContext
 from app.services.storage import StorageService
 
@@ -20,10 +21,12 @@ class ArtifactService:
 
     def __init__(self, session: AsyncSession, storage_service: StorageService) -> None:
         """Store service dependencies."""
+        self._session = session
         self._repository = DocumentArtifactRepository(session)
         self._audit_service = AuditService(session)
         self._storage_service = storage_service
         self._settings = get_settings()
+        self._billing_service = BillingService()
 
     async def store_docx(
         self,
@@ -61,6 +64,11 @@ class ArtifactService:
             artifact=artifact,
             user_id=user_id,
             from_cache=False,
+        )
+        await self._billing_service.record_storage_usage(
+            organization_id=context.organization_id,
+            delta_bytes=int(stored.size_bytes or len(content)),
+            session=self._session,
         )
         return artifact
 
@@ -100,6 +108,11 @@ class ArtifactService:
             artifact=artifact,
             user_id=user_id,
             from_cache=False,
+        )
+        await self._billing_service.record_storage_usage(
+            organization_id=context.organization_id,
+            delta_bytes=int(stored.size_bytes or len(content)),
+            session=self._session,
         )
         return artifact
 
@@ -143,6 +156,11 @@ class ArtifactService:
                 artifact=cloned_artifacts[-1],
                 user_id=user_id,
                 from_cache=True,
+            )
+            await self._billing_service.record_storage_usage(
+                organization_id=artifact.organization_id,
+                delta_bytes=int(stored.size_bytes or len(content)),
+                session=self._session,
             )
         return cloned_artifacts
 

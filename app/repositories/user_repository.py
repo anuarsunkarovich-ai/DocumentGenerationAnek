@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -50,3 +50,18 @@ class UserRepository:
         await self._session.flush()
         await self._session.refresh(user)
         return user
+
+    async def count_active_for_organization(self, organization_id: UUID) -> int:
+        """Return active user seats for one organization based on memberships."""
+        statement = (
+            select(func.count(distinct(OrganizationMembership.user_id)))
+            .select_from(OrganizationMembership)
+            .join(User, User.id == OrganizationMembership.user_id)
+            .where(
+                OrganizationMembership.organization_id == organization_id,
+                OrganizationMembership.is_active.is_(True),
+                User.is_active.is_(True),
+            )
+        )
+        result = await self._session.execute(statement)
+        return int(result.scalar_one())

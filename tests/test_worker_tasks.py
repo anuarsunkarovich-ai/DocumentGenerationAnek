@@ -408,6 +408,7 @@ async def test_document_service_enqueues_generation_job(monkeypatch) -> None:
     payload = build_payload(context)
     enqueued_job_ids: list[UUID] = []
     state: dict[str, object] = {}
+    billing_events: list[tuple[str, UUID]] = []
 
     @asynccontextmanager
     async def fake_transaction_session():
@@ -467,6 +468,15 @@ async def test_document_service_enqueues_generation_job(monkeypatch) -> None:
             _ = organization_id, user_id, template_version_id
             enqueued_job_ids.append(job_id)
 
+    class FakeBillingService:
+        async def enforce_generation_allowed(self, *, organization_id, constructor, session):
+            _ = constructor, session
+            billing_events.append(("enforce_generation_allowed", organization_id))
+
+        async def record_generation_request(self, *, organization_id, constructor, session):
+            _ = constructor, session
+            billing_events.append(("record_generation_request", organization_id))
+
     monkeypatch.setattr(document_service_module, "get_transaction_session", fake_transaction_session)
     monkeypatch.setattr(document_service_module, "TemplateResolverService", FakeTemplateResolverService)
     monkeypatch.setattr(document_service_module, "DocumentRepository", FakeDocumentRepository)
@@ -474,6 +484,7 @@ async def test_document_service_enqueues_generation_job(monkeypatch) -> None:
 
     service = DocumentService()
     cast(Any, service)._job_queue_service = FakeQueueService()
+    cast(Any, service)._billing_service = FakeBillingService()
 
     response = await service.create_job(
         payload,
@@ -484,3 +495,7 @@ async def test_document_service_enqueues_generation_job(monkeypatch) -> None:
     assert response.status == DocumentJobStatus.QUEUED.value
     assert response.from_cache is False
     assert enqueued_job_ids == [response.task_id]
+    assert billing_events == [
+        ("enforce_generation_allowed", context.organization_id),
+        ("record_generation_request", context.organization_id),
+    ]

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +33,7 @@ class TemplateVersion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     version: Mapped[str] = mapped_column(String(50), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     checksum: Mapped[str | None] = mapped_column(String(128), nullable=True)
     variable_schema: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     component_schema: Mapped[list[dict]] = mapped_column(JSONB, default=list, nullable=False)

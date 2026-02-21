@@ -23,6 +23,7 @@ from app.models.enums import ArtifactKind, AuditAction, DocumentJobStatus
 from app.repositories.document_artifact_repository import DocumentArtifactRepository
 from app.repositories.document_repository import DocumentRepository
 from app.services.audit_service import AuditService
+from app.services.billing_service import BillingService
 from app.services.generation.artifact_service import ArtifactService
 from app.services.generation.template_resolver_service import TemplateResolverService
 from app.services.generation.variable_mapper_service import VariableMapperService
@@ -40,6 +41,7 @@ class DocumentService:
         self._storage_service = get_storage_service()
         self._variable_mapper = VariableMapperService()
         self._job_queue_service = JobQueueService()
+        self._billing_service = BillingService()
 
     async def create_job(
         self,
@@ -61,6 +63,11 @@ class DocumentService:
                 require_published=require_published_template,
             )
             constructor = DocumentConstructor.model_validate(payload.constructor)
+            await self._billing_service.enforce_generation_allowed(
+                organization_id=payload.organization_id,
+                constructor=constructor,
+                session=session,
+            )
             _, normalized_payload, cache_key = self._variable_mapper.map_document(
                 context=context,
                 constructor=constructor,
@@ -80,6 +87,11 @@ class DocumentService:
                     normalized_payload=normalized_payload,
                     cache_key=cache_key,
                 )
+            )
+            await self._billing_service.record_generation_request(
+                organization_id=job.organization_id,
+                constructor=constructor,
+                session=session,
             )
             bind_context(
                 job_id=job.id,
@@ -112,6 +124,12 @@ class DocumentService:
                 artifact_repository = DocumentArtifactRepository(session)
                 cached_artifacts = await artifact_repository.list_reusable_by_job_id(cached_job.id)
                 if cached_artifacts:
+                    cached_storage_bytes = sum(int(artifact.size_bytes or 0) for artifact in cached_artifacts)
+                    await self._billing_service.enforce_storage_delta_allowed(
+                        organization_id=job.organization_id,
+                        additional_bytes=cached_storage_bytes,
+                        session=session,
+                    )
                     artifact_service = ArtifactService(session, self._storage_service)
                     await artifact_service.reuse_cached_artifacts(
                         organization_code=context.organization_code,

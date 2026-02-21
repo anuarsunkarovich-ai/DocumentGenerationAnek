@@ -10,6 +10,9 @@ from app.models.document_job import DocumentJob
 from app.models.domain import DOMAIN_VOCABULARY
 from app.models.organization import Organization
 from app.models.organization_membership import OrganizationMembership
+from app.models.organization_plan import OrganizationPlan
+from app.models.organization_usage_meter import OrganizationUsageMeter
+from app.models.plan_definition import PlanDefinition
 from app.models.template import Template
 from app.models.template_version import TemplateVersion
 from app.models.user import User
@@ -25,6 +28,9 @@ __all__ = [
     "DocumentJob",
     "Organization",
     "OrganizationMembership",
+    "OrganizationPlan",
+    "OrganizationUsageMeter",
+    "PlanDefinition",
     "Template",
     "TemplateVersion",
     "User",

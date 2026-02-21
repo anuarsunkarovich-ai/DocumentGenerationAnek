@@ -22,6 +22,13 @@ class Organization(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     api_key_usage_logs: Mapped[list["ApiKeyUsageLog"]] = relationship(
         back_populates="organization"
     )
+    organization_plan: Mapped["OrganizationPlan | None"] = relationship(
+        back_populates="organization",
+        uselist=False,
+    )
+    usage_meters: Mapped[list["OrganizationUsageMeter"]] = relationship(
+        back_populates="organization"
+    )
     templates: Mapped[list["Template"]] = relationship(back_populates="organization")
     document_jobs: Mapped[list["DocumentJob"]] = relationship(back_populates="organization")
     document_artifacts: Mapped[list["DocumentArtifact"]] = relationship(
