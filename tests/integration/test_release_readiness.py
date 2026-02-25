@@ -162,7 +162,15 @@ async def test_generation_pipeline_writes_artifacts_and_audit_logs(monkeypatch) 
         def __init__(self, session: object) -> None:
             _ = session
 
-        async def resolve(self, *, organization_id, template_id, template_version_id):
+        async def resolve(
+            self,
+            *,
+            organization_id,
+            template_id,
+            template_version_id,
+            require_published: bool = False,
+        ):
+            assert require_published is False
             assert organization_id == context.organization_id
             assert template_id == context.template_id
             assert template_version_id == context.template_version_id
@@ -231,11 +239,17 @@ async def test_generation_pipeline_writes_artifacts_and_audit_logs(monkeypatch) 
             self._state["jobs"][job_id].artifacts.append(artifact)
             self._state["audit_events"].append(
                 {"action": AuditAction.ARTIFACT_CREATED, "kind": ArtifactKind.PDF.value}
-            )
+                )
             return artifact
+
+    class FakeBillingService:
+        async def enforce_storage_delta_allowed(self, *, organization_id, additional_bytes, session):
+            _ = organization_id, additional_bytes, session
+            return None
 
     monkeypatch.setattr(generation_module, "get_transaction_session", fake_transaction_session)
     monkeypatch.setattr(generation_module, "get_storage_service", lambda: storage)
+    monkeypatch.setattr(generation_module, "BillingService", FakeBillingService)
     monkeypatch.setattr(generation_module, "DocumentRepository", FakeDocumentRepository)
     monkeypatch.setattr(generation_module, "TemplateResolverService", FakeTemplateResolverService)
     monkeypatch.setattr(generation_module, "AuditService", FakeAuditService)
@@ -289,7 +303,15 @@ async def test_cached_generation_returns_cached_download_and_audit_logs(monkeypa
         def __init__(self, session: object) -> None:
             _ = session
 
-        async def resolve(self, *, organization_id, template_id, template_version_id):
+        async def resolve(
+            self,
+            *,
+            organization_id,
+            template_id,
+            template_version_id,
+            require_published: bool = False,
+        ):
+            assert require_published is False
             return context
 
     class FakeDocumentRepository:
@@ -386,7 +408,21 @@ async def test_cached_generation_returns_cached_download_and_audit_logs(monkeypa
                 cloned.append(clone)
             return cloned
 
+    class FakeBillingService:
+        async def enforce_generation_allowed(self, *, organization_id, constructor, session):
+            _ = organization_id, constructor, session
+            return None
+
+        async def record_generation_request(self, *, organization_id, constructor, session):
+            _ = organization_id, constructor, session
+            return None
+
+        async def enforce_storage_delta_allowed(self, *, organization_id, additional_bytes, session):
+            _ = organization_id, additional_bytes, session
+            return None
+
     monkeypatch.setattr(document_service_module, "get_transaction_session", fake_transaction_session)
+    monkeypatch.setattr(document_service_module, "BillingService", FakeBillingService)
     monkeypatch.setattr(document_service_module, "TemplateResolverService", FakeTemplateResolverService)
     monkeypatch.setattr(document_service_module, "DocumentRepository", FakeDocumentRepository)
     monkeypatch.setattr(

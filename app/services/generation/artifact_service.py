@@ -195,6 +195,8 @@ class ArtifactService:
                 "template_version_id": str(artifact.template_version_id),
                 "kind": artifact.kind.value,
                 "file_name": artifact.file_name,
+                "authenticity_hash": artifact.checksum,
+                "authenticity_algorithm": "sha256",
                 "from_cache": from_cache,
             },
         )

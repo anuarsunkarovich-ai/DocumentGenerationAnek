@@ -75,6 +75,32 @@ class DocumentArtifactAccessResponse(BaseDTO):
     artifact: DocumentArtifactResponse
 
 
+class DocumentVerificationArtifactResponse(BaseDTO):
+    """Artifact metadata returned by authenticity verification endpoints."""
+
+    artifact_id: UUID
+    task_id: UUID | None = None
+    kind: str
+    file_name: str
+    content_type: str
+    size_bytes: int | None = None
+    issued_at: datetime
+    authenticity_hash: str
+    authenticity_algorithm: str = "sha256"
+    verification_code: str
+
+
+class DocumentVerificationResponse(BaseDTO):
+    """Response for authenticity verification requests."""
+
+    organization_id: UUID
+    matched: bool
+    provided_hash: str
+    authenticity_algorithm: str = "sha256"
+    matched_artifact_count: int = 0
+    artifact: DocumentVerificationArtifactResponse | None = None
+
+
 class DocumentJobAccessQuery(BaseDTO):
     """Tenant-scoped query for one document job."""
 

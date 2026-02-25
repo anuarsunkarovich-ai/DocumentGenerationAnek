@@ -17,6 +17,7 @@ from app.dtos.document import (
     DocumentJobCreateRequest,
     DocumentJobResponse,
     DocumentJobStatusResponse,
+    DocumentVerificationResponse,
 )
 from app.models.document_job import DocumentJob
 from app.models.enums import ArtifactKind, AuditAction, DocumentJobStatus
@@ -24,6 +25,7 @@ from app.repositories.document_artifact_repository import DocumentArtifactReposi
 from app.repositories.document_repository import DocumentRepository
 from app.services.audit_service import AuditService
 from app.services.billing_service import BillingService
+from app.services.document_verification_service import DocumentVerificationService
 from app.services.generation.artifact_service import ArtifactService
 from app.services.generation.template_resolver_service import TemplateResolverService
 from app.services.generation.variable_mapper_service import VariableMapperService
@@ -42,6 +44,7 @@ class DocumentService:
         self._variable_mapper = VariableMapperService()
         self._job_queue_service = JobQueueService()
         self._billing_service = BillingService()
+        self._verification_service = DocumentVerificationService()
 
     async def create_job(
         self,
@@ -269,6 +272,20 @@ class DocumentService:
             organization_id=organization_id,
             job_id=job_id,
             preferred_kinds=[ArtifactKind.PDF, ArtifactKind.DOCX],
+        )
+
+    async def verify_artifact(
+        self,
+        *,
+        organization_id: UUID,
+        authenticity_hash: str | None = None,
+        file_bytes: bytes | None = None,
+    ) -> DocumentVerificationResponse:
+        """Return whether a file or hash matches a generated artifact."""
+        return await self._verification_service.verify(
+            organization_id=organization_id,
+            authenticity_hash=authenticity_hash,
+            file_bytes=file_bytes,
         )
 
     async def _get_artifact_access(

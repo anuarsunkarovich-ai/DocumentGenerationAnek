@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile, status
 
 from app.api.controllers.document_controller import DocumentController
 from app.api.dependencies.api_keys import require_api_key_scope
@@ -14,6 +14,7 @@ from app.dtos.document import (
     DocumentJobCreateRequest,
     DocumentJobResponse,
     DocumentJobStatusResponse,
+    DocumentVerificationResponse,
     PublicDocumentJobCreateRequest,
 )
 from app.services.api_key_service import ApiKeyPrincipal
@@ -108,4 +109,23 @@ async def get_public_document_preview(
     return await controller.get_preview_artifact(
         organization_id=principal.organization_id,
         job_id=task_id,
+    )
+
+
+@router.post("/verify", response_model=DocumentVerificationResponse)
+async def verify_public_document_artifact(
+    principal: Annotated[
+        ApiKeyPrincipal,
+        Depends(require_api_key_scope(ApiKeyScope.DOCUMENTS_READ)),
+    ],
+    authenticity_hash: Annotated[str | None, Form()] = None,
+    file: UploadFile | None = File(default=None),
+) -> DocumentVerificationResponse:
+    """Return whether a file or hash matches one generated artifact in the API key's organization."""
+    file_bytes = await file.read() if file is not None else None
+    controller = DocumentController(service=DocumentService())
+    return await controller.verify_artifact(
+        organization_id=principal.organization_id,
+        authenticity_hash=authenticity_hash,
+        file_bytes=file_bytes,
     )

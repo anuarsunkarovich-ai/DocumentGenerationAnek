@@ -447,6 +447,41 @@ Returns the preferred download artifact, currently PDF first and DOCX second.
 
 Returns the preferred preview artifact, currently PDF first and DOCX second.
 
+### `POST /api/v1/documents/verify`
+
+Verify whether an uploaded file or SHA-256 hash matches a generated artifact in the specified organization.
+
+Request:
+
+- content type: `multipart/form-data` or `application/x-www-form-urlencoded`
+- fields:
+  - `organization_id`
+  - `authenticity_hash` or `file`
+
+Response:
+
+```json
+{
+  "organization_id": "uuid",
+  "matched": true,
+  "provided_hash": "64-char-sha256",
+  "authenticity_algorithm": "sha256",
+  "matched_artifact_count": 1,
+  "artifact": {
+    "artifact_id": "uuid",
+    "task_id": "uuid",
+    "kind": "pdf",
+    "file_name": "certificate-1.0.0.pdf",
+    "content_type": "application/pdf",
+    "size_bytes": 12034,
+    "issued_at": "2026-02-21T09:30:00Z",
+    "authenticity_hash": "64-char-sha256",
+    "authenticity_algorithm": "sha256",
+    "verification_code": "VER-ABCDEF12-1234ABCD5678"
+  }
+}
+```
+
 ## Public API
 
 Public SaaS routes are machine-authenticated and tenant-scoped by API key.
@@ -507,6 +542,10 @@ Return the preferred artifact plus a presigned download URL. Requires `documents
 ### `GET /api/v1/public/documents/jobs/{task_id}/preview`
 
 Return the preferred preview artifact. Requires `documents:read`.
+
+### `POST /api/v1/public/documents/verify`
+
+Verify an uploaded file or SHA-256 hash against artifacts inside the API key's organization. Requires `documents:read`.
 
 ### `GET /api/v1/public/audit/events`
 

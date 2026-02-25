@@ -205,6 +205,8 @@ Default profile:
 - first-line indent: `12.5mm`
 - alignment: `justify`
 
+These defaults are now enforced consistently in both DOCX and PDF output for body paragraphs, while headings, captions, tables, images, and signature blocks apply the same profile with block-appropriate overrides such as zero first-line indent and right-aligned signatures.
+
 ## Frontend Guidance
 
 1. Use `GET /api/v1/documents/constructor-schema` to initialize defaults.

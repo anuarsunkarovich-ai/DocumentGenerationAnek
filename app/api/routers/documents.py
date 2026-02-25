@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile, status
 
 from app.api.controllers.document_controller import DocumentController
 from app.api.dependencies.auth import (
@@ -22,6 +22,7 @@ from app.dtos.document import (
     DocumentJobCreateRequest,
     DocumentJobResponse,
     DocumentJobStatusResponse,
+    DocumentVerificationResponse,
 )
 from app.models.user import User
 from app.services.document_service import DocumentService
@@ -84,6 +85,25 @@ async def get_document_job_preview(
     return await controller.get_preview_artifact(
         organization_id=query.organization_id,
         job_id=task_id,
+    )
+
+
+@router.post("/verify", response_model=DocumentVerificationResponse)
+async def verify_document_artifact(
+    request: Request,
+    organization_id: Annotated[UUID, Form(...)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    authenticity_hash: Annotated[str | None, Form()] = None,
+    file: UploadFile | None = File(default=None),
+) -> DocumentVerificationResponse:
+    """Return whether a file or hash matches one generated artifact in this organization."""
+    require_job_read_access(current_user, organization_id, request=request)
+    file_bytes = await file.read() if file is not None else None
+    controller = DocumentController(service=DocumentService())
+    return await controller.verify_artifact(
+        organization_id=organization_id,
+        authenticity_hash=authenticity_hash,
+        file_bytes=file_bytes,
     )
 
 

@@ -10,6 +10,7 @@ from app.dtos.document import (
     DocumentJobCreateRequest,
     DocumentJobResponse,
     DocumentJobStatusResponse,
+    DocumentVerificationResponse,
 )
 from app.services.document_service import DocumentService
 
@@ -77,3 +78,17 @@ class DocumentController:
     async def get_constructor_schema(self) -> ConstructorSchemaResponse:
         """Return the supported constructor contract."""
         return await self._service.get_constructor_schema()
+
+    async def verify_artifact(
+        self,
+        *,
+        organization_id: UUID,
+        authenticity_hash: str | None = None,
+        file_bytes: bytes | None = None,
+    ) -> DocumentVerificationResponse:
+        """Return whether an uploaded file or hash matches a stored artifact."""
+        return await self._service.verify_artifact(
+            organization_id=organization_id,
+            authenticity_hash=authenticity_hash,
+            file_bytes=file_bytes,
+        )

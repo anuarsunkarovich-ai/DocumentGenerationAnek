@@ -18,6 +18,8 @@ from app.dtos.document import (
     DocumentJobCreateRequest,
     DocumentJobResponse,
     DocumentJobStatusResponse,
+    DocumentVerificationArtifactResponse,
+    DocumentVerificationResponse,
 )
 from app.dtos.template import TemplateListResponse, TemplateResponse
 from app.services.api_key_service import ApiKeyPrincipal
@@ -484,3 +486,79 @@ def test_public_document_read_routes_use_api_key_org(monkeypatch, client: TestCl
 
     assert response.status_code == 200
     assert response.json()["organization_id"] == str(principal.organization_id)
+
+
+def test_public_verify_route_returns_matching_artifact(monkeypatch, client: TestClient) -> None:
+    """Public verification should stay scoped to the API key's organization."""
+    principal = build_principal(
+        scopes=(ApiKeyScope.DOCUMENTS_READ,),
+        required_scope=ApiKeyScope.DOCUMENTS_READ,
+    )
+    artifact_id = uuid4()
+    task_id = uuid4()
+    authenticity_hash = "b" * 64
+
+    async def fake_resolve_api_key_principal(self, *, raw_key, required_scope):
+        assert raw_key == "read-key"
+        return build_principal(
+            scopes=(ApiKeyScope.DOCUMENTS_READ,),
+            required_scope=required_scope,
+            organization_id=principal.organization_id,
+            api_key_id=principal.api_key_id,
+        )
+
+    async def fake_enforce_limits(self, api_principal):
+        _ = api_principal
+        return None
+
+    async def fake_log_usage(self, **kwargs):
+        _ = kwargs
+        return None
+
+    async def fake_verify_artifact(
+        self,
+        *,
+        organization_id,
+        authenticity_hash=None,
+        file_bytes=None,
+    ) -> DocumentVerificationResponse:
+        assert organization_id == principal.organization_id
+        assert authenticity_hash == "b" * 64
+        assert file_bytes is None
+        return DocumentVerificationResponse(
+            organization_id=organization_id,
+            matched=True,
+            provided_hash=authenticity_hash,
+            matched_artifact_count=1,
+            artifact=DocumentVerificationArtifactResponse(
+                artifact_id=artifact_id,
+                task_id=task_id,
+                kind="pdf",
+                file_name="certificate-1.0.0.pdf",
+                content_type="application/pdf",
+                size_bytes=1024,
+                issued_at=datetime(2026, 2, 21, 9, 30, tzinfo=timezone.utc),
+                authenticity_hash=authenticity_hash,
+                verification_code="VER-ABCDEF12-BBBBBBBBBBBB",
+            ),
+        )
+
+    monkeypatch.setattr(
+        api_key_service_module.ApiKeyService,
+        "resolve_api_key_principal",
+        fake_resolve_api_key_principal,
+    )
+    monkeypatch.setattr(api_key_service_module.ApiKeyService, "enforce_limits", fake_enforce_limits)
+    monkeypatch.setattr(api_key_service_module.ApiKeyService, "log_usage", fake_log_usage)
+    monkeypatch.setattr(document_service_module.DocumentService, "verify_artifact", fake_verify_artifact)
+
+    response = client.post(
+        "/api/v1/public/documents/verify",
+        headers={"X-API-Key": "read-key"},
+        data={"authenticity_hash": authenticity_hash},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["organization_id"] == str(principal.organization_id)
+    assert payload["artifact"]["artifact_id"] == str(artifact_id)

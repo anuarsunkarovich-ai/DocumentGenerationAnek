@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document_artifact import DocumentArtifact
@@ -66,3 +66,21 @@ class DocumentArtifactRepository:
         )
         result = await self._session.execute(statement)
         return int(result.scalar_one() or 0)
+
+    async def list_by_checksum(
+        self,
+        *,
+        organization_id: UUID,
+        checksum: str,
+    ) -> list[DocumentArtifact]:
+        """Return artifacts whose stored fingerprint matches the provided checksum."""
+        statement: Select[tuple[DocumentArtifact]] = (
+            select(DocumentArtifact)
+            .where(
+                DocumentArtifact.organization_id == organization_id,
+                DocumentArtifact.checksum == checksum,
+            )
+            .order_by(desc(DocumentArtifact.created_at))
+        )
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())
