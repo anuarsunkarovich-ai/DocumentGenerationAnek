@@ -107,12 +107,16 @@ def test_document_job_creation_contract_matches_current_api_contract(
         background_tasks: BackgroundTasks,
         *,
         current_user_id,
+        current_api_key_id=None,
+        require_published_template: bool = False,
     ) -> DocumentJobResponse:
         """Return the shipped queued-job response shape."""
         assert payload.organization_id == organization_id
         assert payload.template_id == template_id
         assert payload.template_version_id == template_version_id
         assert current_user_id == authenticated_membership.user_id
+        assert current_api_key_id is None
+        assert require_published_template is False
         assert payload.data == {"student_name": "Anek"}
         assert background_tasks is not None
         return DocumentJobResponse(
