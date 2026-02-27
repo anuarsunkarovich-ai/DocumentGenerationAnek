@@ -92,16 +92,10 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
                 "id": "text-1",
                 "binding": {"key": "student_name"},
             },
-            {
-                "type": "signature",
-                "id": "signature-1",
-                "signer_name": {"key": "signer_name"},
-            },
         ],
     }
     data_payload = {
         "student_name": "Anek",
-        "signer_name": "Dean Office",
     }
 
     with httpx.Client(base_url=live_stack_config["api_base_url"], timeout=30.0) as client:
@@ -133,14 +127,14 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
             files={
                 "file": (
                     "certificate.docx",
-                    build_docx_fixture("{{student_name}}", "{{signer_name}}"),
+                    build_docx_fixture("{{student_name}}"),
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             },
         )
         assert schema_response.status_code == 200
         schema_payload = schema_response.json()
-        assert schema_payload["variable_count"] == 2
+        assert schema_payload["variable_count"] == 1
 
         upload_response = client.post(
             "/api/v1/templates/upload",
@@ -156,7 +150,7 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
             files={
                 "file": (
                     "certificate.docx",
-                    build_docx_fixture("{{student_name}}", "{{signer_name}}"),
+                    build_docx_fixture("{{student_name}}"),
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             },
@@ -172,7 +166,7 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
             params={"organization_id": live_stack_config["organization_id"]},
         )
         assert stored_schema_response.status_code == 200
-        assert stored_schema_response.json()["schema"]["variable_count"] == 2
+        assert stored_schema_response.json()["schema"]["variable_count"] == 1
 
         generate_response = client.post(
             "/api/v1/documents/generate",
@@ -213,6 +207,25 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
         downloaded_artifact = httpx.get(download_payload["artifact"]["download_url"], timeout=30.0)
         assert downloaded_artifact.status_code == 200
         assert len(downloaded_artifact.content) > 0
+
+        verify_response = client.post(
+            "/api/v1/documents/verify",
+            headers=headers,
+            data={"organization_id": live_stack_config["organization_id"]},
+            files={
+                "file": (
+                    download_payload["artifact"]["file_name"],
+                    downloaded_artifact.content,
+                    download_payload["artifact"]["content_type"],
+                )
+            },
+        )
+        assert verify_response.status_code == 200
+        verify_payload = verify_response.json()
+        assert verify_payload["matched"] is True
+        assert verify_payload["artifact"]["artifact_id"] == download_payload["artifact"]["id"]
+        assert verify_payload["artifact"]["task_id"] == generate_payload["task_id"]
+        assert verify_payload["artifact"]["verification_code"]
 
         preview_response = client.get(
             f"/api/v1/documents/jobs/{generate_payload['task_id']}/preview",
