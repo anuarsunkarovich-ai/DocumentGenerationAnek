@@ -38,6 +38,12 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 uv run celery -A app.workers.celery_app:celery_app worker --loglevel=info --pool=solo
 ```
 
+7. Start the scheduler:
+
+```bash
+uv run celery -A app.workers.celery_app:celery_app beat --loglevel=info
+```
+
 ### Daily Commands
 
 ```bash
@@ -63,7 +69,7 @@ The script writes JSON with the seeded organization and login credentials so you
 ### Files
 
 - `Dockerfile`: multi-stage image with `dev` and `prod` targets
-- `docker-compose.yml`: local stack for API, Celery worker, Redis, PostgreSQL, MinIO, and bucket bootstrap
+- `docker-compose.yml`: local stack for API, Celery worker, Celery scheduler, Redis, PostgreSQL, MinIO, and bucket bootstrap
 - `docker/entrypoint.sh`: applies Alembic before app start
 
 ### Development Stack
@@ -86,11 +92,11 @@ Services:
 ### Production-Like Stack
 
 1. Copy `.env.prod.example` to `.env.prod`
-2. Replace all example secrets and hostnames
+2. Mount the referenced secret files and replace hostnames
 3. Run:
 
 ```bash
-docker compose --profile prod up --build api-prod worker-prod db redis minio minio-init
+docker compose --profile prod up --build api-prod worker-prod scheduler-prod db redis minio minio-init
 ```
 
 ### Migration Behavior
@@ -102,6 +108,38 @@ uv run alembic upgrade head
 ```
 
 before launching the server when `RUN_MIGRATIONS=true`.
+
+## Backup And Restore
+
+PostgreSQL backup:
+
+```bash
+uv run python scripts/backup_postgres.py backups/postgres.dump
+```
+
+PostgreSQL restore:
+
+```bash
+uv run python scripts/restore_postgres.py backups/postgres.dump
+```
+
+MinIO backup:
+
+```bash
+uv run python scripts/backup_minio.py backups/minio
+```
+
+MinIO restore:
+
+```bash
+uv run python scripts/restore_minio.py backups/minio
+```
+
+Restore drill:
+
+```bash
+uv run python scripts/run_restore_drill.py backups
+```
 
 ## Troubleshooting
 

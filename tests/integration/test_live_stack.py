@@ -118,7 +118,9 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
             },
         )
         assert login_response.status_code == 200
-        access_token = login_response.json()["access_token"]
+        login_payload = login_response.json()
+        access_token = login_payload["access_token"]
+        refresh_token = login_payload["refresh_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
 
         schema_response = client.post(
@@ -226,6 +228,7 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
         assert verify_payload["artifact"]["artifact_id"] == download_payload["artifact"]["id"]
         assert verify_payload["artifact"]["task_id"] == generate_payload["task_id"]
         assert verify_payload["artifact"]["verification_code"]
+        authenticity_hash = verify_payload["artifact"]["authenticity_hash"]
 
         preview_response = client.get(
             f"/api/v1/documents/jobs/{generate_payload['task_id']}/preview",
@@ -252,6 +255,59 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
             event["action"] == "document_job_completed" for event in audit_payload["items"]
         )
 
+        api_key_response = client.post(
+            "/api/v1/admin/api-keys",
+            headers=headers,
+            json={
+                "organization_id": live_stack_config["organization_id"],
+                "name": "Live smoke key",
+                "scopes": [
+                    "templates:read",
+                    "documents:generate",
+                    "documents:read",
+                    "audit:read",
+                ],
+            },
+        )
+        assert api_key_response.status_code == 201
+        api_key_payload = api_key_response.json()
+        public_headers = {"X-API-Key": api_key_payload["api_key"]}
+
+        public_templates_response = client.get(
+            "/api/v1/public/templates",
+            headers=public_headers,
+        )
+        assert public_templates_response.status_code == 200
+        assert public_templates_response.json()["items"]
+
+        public_verify_response = client.post(
+            "/api/v1/public/documents/verify",
+            headers=public_headers,
+            data={"authenticity_hash": authenticity_hash},
+        )
+        assert public_verify_response.status_code == 200
+        assert public_verify_response.json()["matched"] is True
+
+        audit_history_response = client.get(
+            "/api/v1/admin/support/audit-history",
+            params={
+                "organization_id": live_stack_config["organization_id"],
+                "entity_type": "document_job",
+                "entity_id": generate_payload["task_id"],
+            },
+            headers=headers,
+        )
+        assert audit_history_response.status_code == 200
+        assert audit_history_response.json()["items"]
+
+        invalidate_cache_response = client.post(
+            f"/api/v1/admin/support/jobs/{generate_payload['task_id']}/invalidate-cache",
+            params={"organization_id": live_stack_config["organization_id"]},
+            headers=headers,
+        )
+        assert invalidate_cache_response.status_code == 200
+        assert invalidate_cache_response.json()["invalidated_artifact_count"] >= 1
+
         cache_before_response = client.get(
             "/api/v1/admin/diagnostics/cache-stats",
             params={"organization_id": live_stack_config["organization_id"]},
@@ -259,6 +315,29 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
         )
         assert cache_before_response.status_code == 200
         assert cache_before_response.json()["completed_jobs"] >= 1
+
+        time.sleep(1.0)
+
+        regenerated_response = client.post(
+            "/api/v1/documents/generate",
+            headers=headers,
+            json={
+                "organization_id": live_stack_config["organization_id"],
+                "template_id": template_id,
+                "template_version_id": template_version_id,
+                "data": data_payload,
+                "constructor": constructor,
+            },
+        )
+        assert regenerated_response.status_code == 202
+        assert regenerated_response.json()["from_cache"] is False
+        regenerated_job = wait_for_job_completion(
+            client,
+            task_id=regenerated_response.json()["task_id"],
+            organization_id=live_stack_config["organization_id"],
+            headers=headers,
+        )
+        assert regenerated_job["status"] == "completed"
 
         cached_generate_response = client.post(
             "/api/v1/documents/generate",
@@ -275,6 +354,13 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
         cached_payload = cached_generate_response.json()
         assert cached_payload["from_cache"] is True
         assert cached_payload["status"] == "completed"
+
+        cleanup_response = client.post(
+            "/api/v1/admin/support/maintenance/cleanup",
+            params={"organization_id": live_stack_config["organization_id"]},
+            headers=headers,
+        )
+        assert cleanup_response.status_code == 200
 
         cache_after_response = client.get(
             "/api/v1/admin/diagnostics/cache-stats",
@@ -301,3 +387,17 @@ def test_live_stack_end_to_end_flow(live_stack_config: dict[str, str]) -> None:
         assert metrics_response.status_code == 200
         assert "document_job_result_total" in metrics_response.text
         assert "http_request_latency_seconds" in metrics_response.text
+
+        refresh_response = client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+        assert refresh_response.status_code == 200
+        refreshed_payload = refresh_response.json()
+
+        logout_response = client.post(
+            "/api/v1/auth/logout",
+            headers={"Authorization": f"Bearer {refreshed_payload['access_token']}"},
+            json={"refresh_token": refreshed_payload["refresh_token"]},
+        )
+        assert logout_response.status_code == 204

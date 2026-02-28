@@ -14,6 +14,7 @@ from app.services.generation.document_generation_service import (
     DocumentGenerationService,
     RetryableGenerationError,
 )
+from app.services.maintenance_service import MaintenanceCleanupResult, MaintenanceService
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,12 @@ class RecoverStaleJobsService(Protocol):
     """Protocol for services that can recover stale jobs."""
 
     async def recover_stale_jobs(self) -> list[UUID]: ...
+
+
+class CleanupMaintenanceService(Protocol):
+    """Protocol for services that can execute one maintenance pass."""
+
+    async def cleanup(self) -> MaintenanceCleanupResult: ...
 
 
 def retry_delay_for_attempt(retry_count: int) -> int:
@@ -76,6 +83,23 @@ def _run_recover_stale_document_jobs(
     return [str(job_id) for job_id in recovered_job_ids]
 
 
+def _run_maintenance_cleanup(
+    *,
+    service: CleanupMaintenanceService | None = None,
+) -> dict[str, int]:
+    """Execute one maintenance cleanup pass."""
+    reset_database_manager()
+    maintenance_service = service or MaintenanceService()
+    result = asyncio.run(maintenance_service.cleanup())
+    return {
+        "expired_artifacts_deleted": result.expired_artifacts_deleted,
+        "failed_jobs_deleted": result.failed_jobs_deleted,
+        "audit_logs_deleted": result.audit_logs_deleted,
+        "temp_files_deleted": result.temp_files_deleted,
+        "storage_bytes_reclaimed": result.storage_bytes_reclaimed,
+    }
+
+
 @celery_app.task(
     bind=True,
     name="document_jobs.process",
@@ -110,6 +134,16 @@ def recover_stale_document_jobs(self) -> list[str]:
     _ = self
     try:
         return _run_recover_stale_document_jobs()
+    finally:
+        clear_context()
+
+
+@celery_app.task(bind=True, name="maintenance.cleanup")
+def cleanup_maintenance(self) -> dict[str, int]:
+    """Run scheduled retention cleanup for artifacts, jobs, audits, and temp data."""
+    _ = self
+    try:
+        return _run_maintenance_cleanup()
     finally:
         clear_context()
 

@@ -65,3 +65,10 @@ class UserRepository:
         )
         result = await self._session.execute(statement)
         return int(result.scalar_one())
+
+    async def set_active(self, user: User, *, is_active: bool) -> User:
+        """Enable or disable one user account."""
+        user.is_active = is_active
+        await self._session.flush()
+        await self._session.refresh(user)
+        return user

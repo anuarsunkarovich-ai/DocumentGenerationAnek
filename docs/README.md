@@ -13,12 +13,13 @@ Reference documentation for the Lean Generator backend.
 - [Constructor Block Schema](constructor-schema.md)
 - [Authorization And Tenancy](authorization.md)
 - [Generation Lifecycle And Polling Flow](generation-lifecycle.md)
+- [Operations](operations.md)
 
 ## Who This Is For
 
 - Backend developers: package ownership, setup, persistence, and runtime behavior
 - Frontend developers: stable API routes, request payloads, response payloads, and polling flow
-- DevOps and deployment work: environment variables, Docker stack, and migration startup behavior
+- DevOps and deployment work: environment variables, Docker stack, migration startup behavior, backups, and retention
 
 ## Contents
 

@@ -16,3 +16,6 @@ Release notes for API, authentication, and operational changes.
 - Document generation, template creation, storage growth, signature-block usage, and audit retention are now constrained by plan enforcement at the service boundary.
 - Generated artifacts now use the stored SHA-256 checksum as their authenticity fingerprint, and verification endpoints are available at `POST /api/v1/documents/verify` and `POST /api/v1/public/documents/verify`.
 - DOCX and PDF generation now enforce the project GOST paragraph defaults consistently, including 1.5 line spacing, 12.5 mm first-line indent for body text, zero paragraph spacing, and right-aligned signature blocks.
+- Production configuration now supports file-backed secrets, and production startup rejects plaintext-only secret configuration for required credentials.
+- Admin support tooling is now available under `/api/v1/admin/support` for audit history lookups, job replay, cache invalidation, manual cleanup runs, and disabling users or API keys.
+- The runtime stack now includes a scheduler for stale-job recovery and retention cleanup, with configurable retention windows for artifacts, failed jobs, audit logs, and temporary files.

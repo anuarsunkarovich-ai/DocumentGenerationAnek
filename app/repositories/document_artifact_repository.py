@@ -7,6 +7,7 @@ from sqlalchemy import Select, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document_artifact import DocumentArtifact
+from app.models.document_job import DocumentJob
 from app.models.enums import ArtifactKind
 
 
@@ -84,3 +85,58 @@ class DocumentArtifactRepository:
         )
         result = await self._session.execute(statement)
         return list(result.scalars().all())
+
+    async def list_expired(
+        self,
+        *,
+        expired_before: datetime,
+        limit: int,
+    ) -> list[DocumentArtifact]:
+        """Return artifacts whose retention window has elapsed."""
+        statement: Select[tuple[DocumentArtifact]] = (
+            select(DocumentArtifact)
+            .where(
+                DocumentArtifact.expires_at.is_not(None),
+                DocumentArtifact.expires_at < expired_before,
+            )
+            .order_by(DocumentArtifact.expires_at.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())
+
+    async def expire_for_cache_key(
+        self,
+        *,
+        organization_id: UUID,
+        template_version_id: UUID,
+        cache_key: str,
+        expires_at: datetime,
+    ) -> list[DocumentArtifact]:
+        """Expire artifacts tied to a cache key so they can no longer be reused."""
+        statement: Select[tuple[DocumentArtifact]] = (
+            select(DocumentArtifact)
+            .join(DocumentJob, DocumentArtifact.document_job_id == DocumentJob.id)
+            .where(
+                DocumentArtifact.organization_id == organization_id,
+                DocumentArtifact.template_version_id == template_version_id,
+                DocumentJob.cache_key == cache_key,
+            )
+        )
+        result = await self._session.execute(statement)
+        artifacts = list(result.scalars().all())
+        for artifact in artifacts:
+            artifact.expires_at = expires_at
+        if artifacts:
+            await self._session.flush()
+        return artifacts
+
+    async def delete_artifacts(self, artifacts: list[DocumentArtifact]) -> int:
+        """Delete artifact records and return how many were removed."""
+        deleted = 0
+        for artifact in artifacts:
+            await self._session.delete(artifact)
+            deleted += 1
+        if deleted:
+            await self._session.flush()
+        return deleted

@@ -175,6 +175,26 @@ class DocumentRepository:
         result = await self._session.execute(statement)
         return list(result.scalars().all())
 
+    async def list_failed_before(
+        self,
+        *,
+        failed_before: datetime,
+        limit: int,
+    ) -> list[DocumentJob]:
+        """Return failed jobs that have aged out of retention."""
+        statement: Select[tuple[DocumentJob]] = (
+            select(DocumentJob)
+            .where(
+                DocumentJob.status == DocumentJobStatus.FAILED,
+                DocumentJob.completed_at.is_not(None),
+                DocumentJob.completed_at < failed_before,
+            )
+            .order_by(DocumentJob.completed_at.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())
+
     async def get_cache_stats(
         self,
         *,
@@ -241,3 +261,13 @@ class DocumentRepository:
         if jobs:
             await self._session.flush()
         return recovered_job_ids
+
+    async def delete_jobs(self, jobs: list[DocumentJob]) -> int:
+        """Delete a set of jobs and return how many rows were removed."""
+        deleted = 0
+        for job in jobs:
+            await self._session.delete(job)
+            deleted += 1
+        if deleted:
+            await self._session.flush()
+        return deleted

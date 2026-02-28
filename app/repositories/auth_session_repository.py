@@ -1,12 +1,14 @@
 """Repository for refresh-session persistence."""
 
 from datetime import datetime, timezone
+from uuid import UUID
 
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.auth_session import AuthSession
+from app.models.organization_membership import OrganizationMembership
 from app.models.user import User
 
 
@@ -28,7 +30,12 @@ class AuthSessionRepository:
         """Return one refresh session by its hashed token value."""
         statement: Select[tuple[AuthSession]] = (
             select(AuthSession)
-            .options(selectinload(AuthSession.user).selectinload(User.organization))
+            .options(
+                selectinload(AuthSession.user).selectinload(User.organization),
+                selectinload(AuthSession.user)
+                .selectinload(User.memberships)
+                .selectinload(OrganizationMembership.organization),
+            )
             .where(AuthSession.refresh_token_hash == refresh_token_hash)
         )
         result = await self._session.execute(statement)
@@ -47,3 +54,20 @@ class AuthSessionRepository:
         await self._session.flush()
         await self._session.refresh(auth_session)
         return auth_session
+
+    async def revoke_all_for_user(self, *, user_id: UUID) -> int:
+        """Revoke every active refresh session for one user."""
+        statement: Select[tuple[AuthSession]] = (
+            select(AuthSession).where(
+                AuthSession.user_id == user_id,
+                AuthSession.revoked_at.is_(None),
+            )
+        )
+        result = await self._session.execute(statement)
+        sessions = list(result.scalars().all())
+        revoked_at = datetime.now(timezone.utc)
+        for auth_session in sessions:
+            auth_session.revoked_at = revoked_at
+        if sessions:
+            await self._session.flush()
+        return len(sessions)

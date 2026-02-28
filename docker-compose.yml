@@ -183,6 +183,43 @@ services:
       redis:
         condition: service_healthy
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    env_file:
+      - .env.example
+    environment:
+      APP__ENVIRONMENT: development
+      APP__DEBUG: "true"
+      DATABASE__HOST: db
+      STORAGE__ENDPOINT: minio:9000
+      STORAGE__PUBLIC_ENDPOINT: localhost:9000
+      STORAGE__PUBLIC_SECURE: "false"
+      REDIS__HOST: redis
+      RUN_MIGRATIONS: "false"
+    command:
+      - uv
+      - run
+      - celery
+      - -A
+      - app.workers.celery_app:celery_app
+      - beat
+      - --loglevel=info
+    volumes:
+      - .:/app
+      - scheduler-venv:/app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
   worker-prod:
     profiles: ["prod"]
     build:
@@ -218,8 +255,43 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  scheduler-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    env_file:
+      - .env.prod.example
+    environment:
+      DATABASE__HOST: db
+      STORAGE__ENDPOINT: minio:9000
+      STORAGE__PUBLIC_ENDPOINT: localhost:9000
+      STORAGE__PUBLIC_SECURE: "false"
+      REDIS__HOST: redis
+      RUN_MIGRATIONS: "false"
+    command:
+      - uv
+      - run
+      - celery
+      - -A
+      - app.workers.celery_app:celery_app
+      - beat
+      - --loglevel=info
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   api-venv:
   worker-venv:
+  scheduler-venv:
   postgres-data:
   minio-data:

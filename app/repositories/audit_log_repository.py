@@ -29,6 +29,8 @@ class AuditLogRepository:
         organization_id: UUID,
         entity_type: str,
         entity_id: UUID,
+        limit: int | None = None,
+        created_after: datetime | None = None,
     ) -> list[AuditLog]:
         """Return all audit log entries for one entity inside one organization."""
         statement: Select[tuple[AuditLog]] = (
@@ -40,6 +42,10 @@ class AuditLogRepository:
             )
             .order_by(AuditLog.created_at.desc())
         )
+        if created_after is not None:
+            statement = statement.where(AuditLog.created_at >= created_after)
+        if limit is not None:
+            statement = statement.limit(limit)
         result = await self._session.execute(statement)
         return list(result.scalars().all())
 
@@ -61,3 +67,14 @@ class AuditLogRepository:
             statement = statement.where(AuditLog.created_at >= created_after)
         result = await self._session.execute(statement)
         return list(result.scalars().all())
+
+    async def delete_older_than(self, *, older_than: datetime) -> int:
+        """Delete audit log rows older than the provided cutoff."""
+        statement: Select[tuple[AuditLog]] = select(AuditLog).where(AuditLog.created_at < older_than)
+        result = await self._session.execute(statement)
+        rows = list(result.scalars().all())
+        for row in rows:
+            await self._session.delete(row)
+        if rows:
+            await self._session.flush()
+        return len(rows)

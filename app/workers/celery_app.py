@@ -25,4 +25,14 @@ celery_app.conf.update(
     result_serializer="json",
     accept_content=["json"],
     result_expires=settings.worker.result_expires_seconds,
+    beat_schedule={
+        "recover-stale-document-jobs": {
+            "task": "document_jobs.recover_stale",
+            "schedule": settings.worker.stale_job_timeout_seconds,
+        },
+        "cleanup-retention-data": {
+            "task": "maintenance.cleanup",
+            "schedule": settings.worker.maintenance_cleanup_interval_minutes * 60,
+        },
+    },
 )

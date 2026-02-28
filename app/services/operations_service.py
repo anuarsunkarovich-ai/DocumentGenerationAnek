@@ -4,25 +4,41 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import cast
 
+from fastapi import BackgroundTasks
 from redis import Redis
 from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import get_transaction_session
+from app.core.exceptions import ConflictError, NotFoundError
 from app.core.metrics import observe_queue_depth, observe_worker_status
 from app.dtos.admin import (
+    ApiKeyDisableResponse,
     AuditEventDiagnosticResponse,
     AuditEventListResponse,
+    CacheInvalidationResponse,
     CacheStatsResponse,
     FailedJobDiagnosticResponse,
     FailedJobsListResponse,
+    MaintenanceCleanupResponse,
+    ReplayJobResponse,
+    UserDisableResponse,
     WorkerNodeStatusResponse,
     WorkerStatusResponse,
 )
+from app.dtos.document import DocumentJobCreateRequest
 from app.dtos.health import HealthDependencyResponse, HealthResponse, LiveHealthResponse
+from app.models.enums import AuditAction
 from app.repositories.audit_log_repository import AuditLogRepository
+from app.repositories.auth_session_repository import AuthSessionRepository
+from app.repositories.document_artifact_repository import DocumentArtifactRepository
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.user_repository import UserRepository
+from app.services.api_key_service import ApiKeyService
+from app.services.audit_service import AuditService
 from app.services.billing_service import BillingService
+from app.services.document_service import DocumentService
+from app.services.maintenance_service import MaintenanceService
 from app.services.storage import get_storage_service
 
 
@@ -131,6 +147,44 @@ class OperationsService:
                 ]
             )
 
+    async def list_audit_history(
+        self,
+        *,
+        organization_id,
+        entity_type: str,
+        entity_id,
+        limit: int,
+    ) -> AuditEventListResponse:
+        """Return retained audit history for one entity in one organization."""
+        async with get_transaction_session() as session:
+            retention_days = await self._billing_service.get_audit_retention_days(
+                organization_id=organization_id,
+                session=session,
+            )
+            created_after = datetime.now(timezone.utc) - timedelta(days=retention_days)
+            events = await AuditLogRepository(session).list_for_entity(
+                organization_id=organization_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                limit=limit,
+                created_after=created_after,
+            )
+            return AuditEventListResponse(
+                items=[
+                    AuditEventDiagnosticResponse(
+                        id=event.id,
+                        organization_id=event.organization_id,
+                        user_id=event.user_id,
+                        action=event.action.value,
+                        entity_type=event.entity_type,
+                        entity_id=event.entity_id,
+                        payload=event.payload,
+                        created_at=event.created_at,
+                    )
+                    for event in events
+                ]
+            )
+
     async def get_cache_stats(self, *, organization_id) -> CacheStatsResponse:
         """Return aggregate cache stats for one organization."""
         async with get_transaction_session() as session:
@@ -158,6 +212,173 @@ class OperationsService:
                 WorkerNodeStatusResponse(name=name, is_online=is_online)
                 for name, is_online in sorted(worker_map.items())
             ],
+        )
+
+    async def replay_job(
+        self,
+        *,
+        organization_id,
+        job_id,
+        current_user_id,
+    ) -> ReplayJobResponse:
+        """Clone one existing job request back into the generation queue."""
+        async with get_transaction_session() as session:
+            source_job = await DocumentRepository(session).get_by_id(
+                job_id,
+                organization_id=organization_id,
+            )
+            if source_job is None:
+                raise NotFoundError("Document job was not found.")
+            payload = DocumentJobCreateRequest.model_validate(source_job.input_payload)
+
+        job_response = await DocumentService().create_job(
+            payload,
+            BackgroundTasks(),
+            current_user_id=current_user_id,
+        )
+
+        async with get_transaction_session() as session:
+            await AuditService(session).log_event(
+                organization_id=organization_id,
+                user_id=current_user_id,
+                action=AuditAction.DOCUMENT_JOB_REPLAYED,
+                entity_type="document_job",
+                entity_id=job_response.task_id,
+                payload={
+                    "replayed_from_task_id": str(job_id),
+                    "template_id": str(job_response.template_id) if job_response.template_id else None,
+                    "template_version_id": (
+                        str(job_response.template_version_id)
+                        if job_response.template_version_id
+                        else None
+                    ),
+                },
+            )
+
+        return ReplayJobResponse(
+            replayed_from_task_id=job_id,
+            job=job_response,
+        )
+
+    async def invalidate_cache(
+        self,
+        *,
+        organization_id,
+        job_id,
+        current_user_id,
+    ) -> CacheInvalidationResponse:
+        """Expire cache lineage for one generated job so it cannot be reused."""
+        invalidated_at = datetime.now(timezone.utc)
+        async with get_transaction_session() as session:
+            job = await DocumentRepository(session).get_by_id(
+                job_id,
+                organization_id=organization_id,
+            )
+            if job is None:
+                raise NotFoundError("Document job was not found.")
+
+            invalidated_artifacts = []
+            if job.cache_key:
+                invalidated_artifacts = await DocumentArtifactRepository(session).expire_for_cache_key(
+                    organization_id=organization_id,
+                    template_version_id=job.template_version_id,
+                    cache_key=job.cache_key,
+                    expires_at=invalidated_at,
+                )
+            await AuditService(session).log_event(
+                organization_id=organization_id,
+                user_id=current_user_id,
+                action=AuditAction.CACHE_INVALIDATED,
+                entity_type="document_job",
+                entity_id=job.id,
+                payload={
+                    "cache_key": job.cache_key,
+                    "invalidated_artifact_count": len(invalidated_artifacts),
+                },
+            )
+
+            return CacheInvalidationResponse(
+                organization_id=organization_id,
+                task_id=job.id,
+                cache_key=job.cache_key,
+                invalidated_artifact_count=len(invalidated_artifacts),
+                invalidated_at=invalidated_at,
+            )
+
+    async def disable_user(
+        self,
+        *,
+        organization_id,
+        user_id,
+        current_user_id,
+    ) -> UserDisableResponse:
+        """Disable one user account and revoke its refresh sessions."""
+        if user_id == current_user_id:
+            raise ConflictError("Admins cannot disable their own account.")
+
+        async with get_transaction_session() as session:
+            user_repository = UserRepository(session)
+            session_repository = AuthSessionRepository(session)
+            audit_service = AuditService(session)
+            user = await user_repository.get_by_id(user_id)
+            if user is None or not any(
+                membership.organization_id == organization_id for membership in user.memberships
+            ):
+                raise NotFoundError("User was not found.")
+
+            user = await user_repository.set_active(user, is_active=False)
+            revoked_session_count = await session_repository.revoke_all_for_user(user_id=user.id)
+            await audit_service.log_event(
+                organization_id=organization_id,
+                user_id=current_user_id,
+                action=AuditAction.USER_DISABLED,
+                entity_type="user",
+                entity_id=user.id,
+                payload={
+                    "email": user.email,
+                    "revoked_session_count": revoked_session_count,
+                },
+            )
+            return UserDisableResponse(
+                id=user.id,
+                organization_id=organization_id,
+                email=user.email,
+                full_name=user.full_name,
+                is_active=user.is_active,
+                revoked_session_count=revoked_session_count,
+            )
+
+    async def disable_api_key(
+        self,
+        *,
+        organization_id,
+        api_key_id,
+        current_user_id,
+    ) -> ApiKeyDisableResponse:
+        """Disable one API key for support and incident response workflows."""
+        disabled_at = datetime.now(timezone.utc)
+        api_key = await ApiKeyService().disable_api_key(
+            organization_id=organization_id,
+            api_key_id=api_key_id,
+            current_user_id=current_user_id,
+        )
+        return ApiKeyDisableResponse(
+            id=api_key.id,
+            organization_id=api_key.organization_id,
+            name=api_key.name,
+            status=api_key.status,
+            disabled_at=disabled_at,
+        )
+
+    async def run_maintenance_cleanup(self) -> MaintenanceCleanupResponse:
+        """Run one cleanup pass immediately and return the summary."""
+        result = await MaintenanceService().cleanup()
+        return MaintenanceCleanupResponse(
+            expired_artifacts_deleted=result.expired_artifacts_deleted,
+            failed_jobs_deleted=result.failed_jobs_deleted,
+            audit_logs_deleted=result.audit_logs_deleted,
+            temp_files_deleted=result.temp_files_deleted,
+            storage_bytes_reclaimed=result.storage_bytes_reclaimed,
         )
 
     async def refresh_runtime_metrics(self) -> None:

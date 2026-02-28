@@ -1,4 +1,7 @@
-"""Integration tests for health, metrics, and admin diagnostics routes."""
+"""Integration tests for health, admin diagnostics, and support routes."""
+
+from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,11 +9,17 @@ from fastapi.testclient import TestClient
 import app.main as main_module
 import app.services.operations_service as operations_service_module
 from app.dtos.admin import (
+    ApiKeyDisableResponse,
     AuditEventListResponse,
+    CacheInvalidationResponse,
     CacheStatsResponse,
     FailedJobsListResponse,
+    MaintenanceCleanupResponse,
+    ReplayJobResponse,
+    UserDisableResponse,
     WorkerStatusResponse,
 )
+from app.dtos.document import DocumentJobResponse
 from app.dtos.health import HealthDependencyResponse, HealthResponse, LiveHealthResponse
 
 pytestmark = pytest.mark.integration
@@ -134,3 +143,146 @@ def test_admin_diagnostics_routes_return_service_payloads(
     assert cache_stats_response.json()["cache_hit_ratio"] == 0.4
     assert worker_status_response.status_code == 200
     assert worker_status_response.json()["queue_depth"] == 2
+
+
+def test_admin_support_routes_return_service_payloads(
+    monkeypatch,
+    authenticated_client: TestClient,
+    authenticated_membership,
+) -> None:
+    """Support routes should expose replay, cache, audit, disable, and cleanup operations."""
+    organization_id = authenticated_membership.organization_id
+    job_id = uuid4()
+    user_id = uuid4()
+    api_key_id = uuid4()
+    issued_at = datetime(2026, 2, 28, 10, 0, tzinfo=timezone.utc)
+
+    async def fake_audit_history(self, *, organization_id, entity_type, entity_id, limit):
+        assert entity_type == "document_job"
+        assert entity_id == job_id
+        assert limit == 50
+        return AuditEventListResponse(items=[])
+
+    async def fake_replay_job(self, *, organization_id, job_id, current_user_id):
+        assert current_user_id == authenticated_membership.user.id
+        return ReplayJobResponse(
+            replayed_from_task_id=job_id,
+            job=DocumentJobResponse(
+                task_id=uuid4(),
+                organization_id=organization_id,
+                status="queued",
+                template_id=uuid4(),
+                template_version_id=uuid4(),
+                requested_by_user_id=current_user_id,
+                from_cache=False,
+            ),
+        )
+
+    async def fake_invalidate_cache(self, *, organization_id, job_id, current_user_id):
+        assert current_user_id == authenticated_membership.user.id
+        return CacheInvalidationResponse(
+            organization_id=organization_id,
+            task_id=job_id,
+            cache_key="cache-123",
+            invalidated_artifact_count=2,
+            invalidated_at=issued_at,
+        )
+
+    async def fake_disable_user(self, *, organization_id, user_id, current_user_id):
+        assert current_user_id == authenticated_membership.user.id
+        return UserDisableResponse(
+            id=user_id,
+            organization_id=organization_id,
+            email="operator@example.com",
+            full_name="Operator",
+            is_active=False,
+            revoked_session_count=3,
+        )
+
+    async def fake_disable_api_key(self, *, organization_id, api_key_id, current_user_id):
+        assert current_user_id == authenticated_membership.user.id
+        return ApiKeyDisableResponse(
+            id=api_key_id,
+            organization_id=organization_id,
+            name="Partner key",
+            status="disabled",
+            disabled_at=issued_at,
+        )
+
+    async def fake_cleanup(self):
+        return MaintenanceCleanupResponse(
+            expired_artifacts_deleted=4,
+            failed_jobs_deleted=1,
+            audit_logs_deleted=2,
+            temp_files_deleted=3,
+            storage_bytes_reclaimed=4096,
+        )
+
+    monkeypatch.setattr(
+        operations_service_module.OperationsService,
+        "list_audit_history",
+        fake_audit_history,
+    )
+    monkeypatch.setattr(operations_service_module.OperationsService, "replay_job", fake_replay_job)
+    monkeypatch.setattr(
+        operations_service_module.OperationsService,
+        "invalidate_cache",
+        fake_invalidate_cache,
+    )
+    monkeypatch.setattr(
+        operations_service_module.OperationsService,
+        "disable_user",
+        fake_disable_user,
+    )
+    monkeypatch.setattr(
+        operations_service_module.OperationsService,
+        "disable_api_key",
+        fake_disable_api_key,
+    )
+    monkeypatch.setattr(
+        operations_service_module.OperationsService,
+        "run_maintenance_cleanup",
+        fake_cleanup,
+    )
+
+    audit_history_response = authenticated_client.get(
+        "/api/v1/admin/support/audit-history",
+        params={
+            "organization_id": str(organization_id),
+            "entity_type": "document_job",
+            "entity_id": str(job_id),
+        },
+    )
+    replay_response = authenticated_client.post(
+        f"/api/v1/admin/support/jobs/{job_id}/replay",
+        params={"organization_id": str(organization_id)},
+    )
+    invalidate_response = authenticated_client.post(
+        f"/api/v1/admin/support/jobs/{job_id}/invalidate-cache",
+        params={"organization_id": str(organization_id)},
+    )
+    disable_user_response = authenticated_client.post(
+        f"/api/v1/admin/support/users/{user_id}/disable",
+        params={"organization_id": str(organization_id)},
+    )
+    disable_api_key_response = authenticated_client.post(
+        f"/api/v1/admin/support/api-keys/{api_key_id}/disable",
+        params={"organization_id": str(organization_id)},
+    )
+    cleanup_response = authenticated_client.post(
+        "/api/v1/admin/support/maintenance/cleanup",
+        params={"organization_id": str(organization_id)},
+    )
+
+    assert audit_history_response.status_code == 200
+    assert audit_history_response.json() == {"items": []}
+    assert replay_response.status_code == 200
+    assert replay_response.json()["replayed_from_task_id"] == str(job_id)
+    assert invalidate_response.status_code == 200
+    assert invalidate_response.json()["invalidated_artifact_count"] == 2
+    assert disable_user_response.status_code == 200
+    assert disable_user_response.json()["revoked_session_count"] == 3
+    assert disable_api_key_response.status_code == 200
+    assert disable_api_key_response.json()["status"] == "disabled"
+    assert cleanup_response.status_code == 200
+    assert cleanup_response.json()["storage_bytes_reclaimed"] == 4096

@@ -14,11 +14,12 @@ Project documentation lives under [docs/README.md](/C:/Users/Anek/DocumentGenera
 - [Constructor Block Schema](/C:/Users/Anek/DocumentGenerationAnek/docs/constructor-schema.md)
 - [Authorization And Tenancy](/C:/Users/Anek/DocumentGenerationAnek/docs/authorization.md)
 - [Generation Lifecycle](/C:/Users/Anek/DocumentGenerationAnek/docs/generation-lifecycle.md)
+- [Operations](/C:/Users/Anek/DocumentGenerationAnek/docs/operations.md)
 - [Changelog](/C:/Users/Anek/DocumentGenerationAnek/CHANGELOG.md)
 
 ## Quick Start
 
-For a full local backend stack with PostgreSQL, Redis, MinIO, and a Celery worker:
+For a full local backend stack with PostgreSQL, Redis, MinIO, a Celery worker, and the scheduler:
 
 ```bash
 docker compose up --build
@@ -34,6 +35,7 @@ For local development without Docker:
 4. Run `uv run alembic upgrade head`
 5. Run `uv run uvicorn app.main:app --reload`
 6. Run `uv run celery -A app.workers.celery_app:celery_app worker --loglevel=info --pool=solo`
+7. Run `uv run celery -A app.workers.celery_app:celery_app beat --loglevel=info`
 
 ## UV Commands
 
@@ -77,7 +79,7 @@ The Docker development stack reads `.env.example` directly, so `docker compose u
 The container setup is split into:
 
 - [Dockerfile](/C:/Users/Anek/DocumentGenerationAnek/Dockerfile): multi-stage image with `dev` and `prod` targets
-- [docker-compose.yml](/C:/Users/Anek/DocumentGenerationAnek/docker-compose.yml): local orchestration for API, Celery worker, Redis, PostgreSQL, MinIO, and bucket bootstrap
+- [docker-compose.yml](/C:/Users/Anek/DocumentGenerationAnek/docker-compose.yml): local orchestration for API, Celery worker, Celery scheduler, Redis, PostgreSQL, MinIO, and bucket bootstrap
 - [docker/entrypoint.sh](/C:/Users/Anek/DocumentGenerationAnek/docker/entrypoint.sh): startup wrapper that applies Alembic migrations before launching the app
 
 Default development stack:
@@ -89,8 +91,8 @@ docker compose up --build
 Production profile:
 
 1. Copy `.env.prod.example` to `.env.prod`
-2. Set real credentials and hostnames
-3. Run `docker compose --profile prod up --build api-prod worker-prod db redis minio minio-init`
+2. Mount real secrets and hostnames
+3. Run `docker compose --profile prod up --build api-prod worker-prod scheduler-prod db redis minio minio-init`
 
 ## Current Scope
 
@@ -114,12 +116,13 @@ The backend reads environment configuration through nested Pydantic settings in 
 - `redis`: Celery broker/result connectivity
 - `generation`: upload, rendering, cache, and block-size limits
 - `worker`: queue name, retries, backoff, and stale-job recovery windows
+- `retention`: artifact, failed-job, audit-log, and temp-data cleanup windows
 - `api_keys`: public API header name and per-key/per-org rate limits
 - billing data is modeled in the database and enforced in service logic, with a seeded default starter plan
 - `observability`: request IDs, correlation headers, and Sentry options
 - `paths`: local fallback directories for templates, artifacts, and temp files
 
-Use [.env.example](/C:/Users/Anek/DocumentGenerationAnek/.env.example) for host-based development and [.env.prod.example](/C:/Users/Anek/DocumentGenerationAnek/.env.prod.example) as the starting point for production configuration.
+Use [.env.example](/C:/Users/Anek/DocumentGenerationAnek/.env.example) for host-based development and [.env.prod.example](/C:/Users/Anek/DocumentGenerationAnek/.env.prod.example) as the starting point for production configuration. Production deployments now expect mounted secret files rather than plaintext credentials.
 
 ## Database
 
@@ -183,7 +186,7 @@ The API contract stays the same, but generation now leaves the API process immed
 
 Internal template and document routes are protected by bearer auth. Public SaaS routes under `/api/v1/public` use `X-API-Key` machine auth with per-key scopes and rate limits. The backend derives actor fields such as `requested_by_user_id` and `created_by_user_id` from the authenticated user or API key context instead of trusting client input.
 
-Observability is available through structured logs, `/metrics`, `/health/live`, `/health/ready`, and admin diagnostics routes under `/api/v1/admin/diagnostics`.
+Observability is available through structured logs, `/metrics`, `/health/live`, `/health/ready`, admin diagnostics routes under `/api/v1/admin/diagnostics`, and admin support tooling under `/api/v1/admin/support`.
 
 ## Multi-Tenancy
 

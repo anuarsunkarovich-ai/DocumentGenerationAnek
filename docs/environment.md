@@ -38,6 +38,7 @@ STORAGE__ENDPOINT=localhost:9000
 | `DATABASE__NAME` | database name | `lean_generator` |
 | `DATABASE__USER` | database user | `postgres` |
 | `DATABASE__PASSWORD` | database password | `postgres` |
+| `DATABASE__PASSWORD_FILE` | mounted secret file for the database password | empty |
 | `DATABASE__ECHO` | SQLAlchemy SQL echo | `false` |
 | `DATABASE__POOL_SIZE` | async engine pool size | `10` |
 | `DATABASE__MAX_OVERFLOW` | extra pooled connections | `20` |
@@ -53,7 +54,9 @@ Derived value:
 | `STORAGE__ENDPOINT` | MinIO or S3-compatible endpoint | `minio:9000` |
 | `STORAGE__PUBLIC_ENDPOINT` | external host used when building presigned download URLs | empty |
 | `STORAGE__ACCESS_KEY` | storage access key | `minioadmin` |
+| `STORAGE__ACCESS_KEY_FILE` | mounted secret file for the storage access key | empty |
 | `STORAGE__SECRET_KEY` | storage secret key | `minioadmin` |
+| `STORAGE__SECRET_KEY_FILE` | mounted secret file for the storage secret key | empty |
 | `STORAGE__BUCKET` | main object bucket | `documents` |
 | `STORAGE__SECURE` | use HTTPS | `false` |
 | `STORAGE__PUBLIC_SECURE` | override HTTPS for presigned public URLs | empty |
@@ -79,6 +82,7 @@ Notes:
 | `REDIS__BROKER_DB` | Redis logical DB for Celery broker traffic | `0` |
 | `REDIS__RESULT_DB` | Redis logical DB for Celery result metadata | `1` |
 | `REDIS__PASSWORD` | optional Redis password | empty |
+| `REDIS__PASSWORD_FILE` | mounted secret file for the Redis password | empty |
 
 ## Generation Settings
 
@@ -99,6 +103,7 @@ Notes:
 | Variable | Meaning | Default |
 | --- | --- | --- |
 | `AUTH__JWT_SECRET_KEY` | HMAC secret for JWT signing | `change-this-in-production-32-byte-key` |
+| `AUTH__JWT_SECRET_KEY_FILE` | mounted secret file for the JWT signing key | empty |
 | `AUTH__JWT_ALGORITHM` | JWT signing algorithm | `HS256` |
 | `AUTH__ISSUER` | expected JWT issuer | `lean-generator-backend` |
 | `AUTH__AUDIENCE` | expected JWT audience | `lean-generator-clients` |
@@ -116,6 +121,17 @@ Notes:
 | `WORKER__STALE_JOB_TIMEOUT_SECONDS` | age after which a `processing` job is considered stale | `300` |
 | `WORKER__STALE_JOB_RECOVERY_BATCH_SIZE` | max stale jobs recovered per scan | `100` |
 | `WORKER__RESULT_EXPIRES_SECONDS` | retention period for Celery result metadata | `3600` |
+| `WORKER__MAINTENANCE_CLEANUP_INTERVAL_MINUTES` | scheduler cadence for retention cleanup | `60` |
+
+## Retention Settings
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `RETENTION__GENERATED_ARTIFACT_RETENTION_DAYS` | retention window for generated artifacts | `30` |
+| `RETENTION__FAILED_JOB_RETENTION_DAYS` | retention window for failed jobs | `14` |
+| `RETENTION__AUDIT_LOG_RETENTION_DAYS` | hard-prune window for audit logs | `90` |
+| `RETENTION__TEMP_DATA_RETENTION_HOURS` | retention window for files under `data/tmp` | `24` |
+| `RETENTION__CLEANUP_BATCH_SIZE` | max rows processed per cleanup batch | `250` |
 
 ## API Key Settings
 
@@ -133,6 +149,7 @@ Notes:
 | Variable | Meaning | Default |
 | --- | --- | --- |
 | `OBSERVABILITY__SENTRY_DSN` | optional Sentry DSN for API and worker exceptions | empty |
+| `OBSERVABILITY__SENTRY_DSN_FILE` | mounted secret file for the Sentry DSN | empty |
 | `OBSERVABILITY__SENTRY_TRACES_SAMPLE_RATE` | Sentry tracing sample rate | `0.0` |
 | `OBSERVABILITY__REQUEST_ID_HEADER` | response and request header used for request IDs | `X-Request-ID` |
 | `OBSERVABILITY__CORRELATION_ID_HEADER` | response and request header used for distributed correlation | `X-Correlation-ID` |
@@ -143,6 +160,22 @@ Notes:
 - `.env.prod.example`: production-oriented example
 - `.env`: your local override file
 - `.env.prod`: your real production or prod-like Docker file
+
+## Production Secret Management
+
+Production mode requires mounted secret files for:
+
+- `DATABASE__PASSWORD_FILE`
+- `STORAGE__ACCESS_KEY_FILE`
+- `STORAGE__SECRET_KEY_FILE`
+- `AUTH__JWT_SECRET_KEY_FILE`
+
+If Redis auth or Sentry are enabled in production, use:
+
+- `REDIS__PASSWORD_FILE`
+- `OBSERVABILITY__SENTRY_DSN_FILE`
+
+The application rejects production startup when required secrets are still configured only as plaintext values.
 
 ## Frontend-Relevant Settings
 

@@ -180,6 +180,37 @@ class ApiKeyService:
             )
             return self._serialize_api_key(api_key)
 
+    async def disable_api_key(
+        self,
+        *,
+        organization_id: UUID,
+        api_key_id: UUID,
+        current_user_id: UUID,
+    ) -> ApiKeyResponse:
+        """Disable one API key without rotating or revoking it permanently."""
+        async with get_transaction_session() as session:
+            repository = ApiKeyRepository(session)
+            audit_service = AuditService(session)
+            api_key = await repository.get_by_id(api_key_id, organization_id=organization_id)
+            if api_key is None:
+                raise NotFoundError("API key was not found.")
+
+            api_key = await repository.set_status(api_key, status="disabled")
+            await audit_service.log_event(
+                organization_id=organization_id,
+                user_id=current_user_id,
+                action=AuditAction.API_KEY_DISABLED,
+                entity_type="api_key",
+                entity_id=api_key.id,
+                payload={
+                    "name": api_key.name,
+                    "key_prefix": api_key.key_prefix,
+                    "scopes": api_key.scopes,
+                    "status": api_key.status,
+                },
+            )
+            return self._serialize_api_key(api_key)
+
     async def resolve_api_key_principal(
         self,
         *,

@@ -60,6 +60,15 @@ class ApiKeyRepository:
         await self._session.refresh(api_key)
         return api_key
 
+    async def set_status(self, api_key: ApiKey, *, status: str) -> ApiKey:
+        """Update the operational status for one API key."""
+        api_key.status = status
+        if status != "revoked":
+            api_key.revoked_at = None
+        await self._session.flush()
+        await self._session.refresh(api_key)
+        return api_key
+
     async def rotate(
         self,
         api_key: ApiKey,

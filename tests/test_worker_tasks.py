@@ -148,6 +148,30 @@ def test_recover_stale_document_jobs_requeues_recovered_ids() -> None:
     assert enqueued_job_ids == recovered_job_ids
 
 
+def test_cleanup_maintenance_returns_summary() -> None:
+    """Maintenance cleanup tasks should surface a stable summary payload."""
+
+    class FakeService:
+        async def cleanup(self):
+            return SimpleNamespace(
+                expired_artifacts_deleted=2,
+                failed_jobs_deleted=1,
+                audit_logs_deleted=3,
+                temp_files_deleted=4,
+                storage_bytes_reclaimed=2048,
+            )
+
+    result = worker_tasks._run_maintenance_cleanup(service=FakeService())
+
+    assert result == {
+        "expired_artifacts_deleted": 2,
+        "failed_jobs_deleted": 1,
+        "audit_logs_deleted": 3,
+        "temp_files_deleted": 4,
+        "storage_bytes_reclaimed": 2048,
+    }
+
+
 @pytest.mark.anyio
 async def test_document_generation_service_skips_duplicate_claim(monkeypatch) -> None:
     """Duplicate worker deliveries should no-op when the job cannot be claimed."""
@@ -300,6 +324,88 @@ async def test_document_generation_service_requeues_retryable_failure(monkeypatc
     assert job.status == DocumentJobStatus.QUEUED
     assert job.error_message == "temporary storage issue"
     assert job.started_at is None
+
+
+@pytest.mark.anyio
+async def test_document_generation_service_requeues_connection_failure(monkeypatch) -> None:
+    """Connection failures should be treated as transient, such as a DB restart."""
+    context = build_template_context()
+    job = SimpleNamespace(
+        id=uuid4(),
+        organization_id=context.organization_id,
+        template_id=context.template_id,
+        template_version_id=context.template_version_id,
+        requested_by_user_id=uuid4(),
+        input_payload=build_payload(context).model_dump(mode="json"),
+        status=DocumentJobStatus.QUEUED,
+        normalized_payload=None,
+        cache_key=None,
+        error_message=None,
+        started_at=None,
+        completed_at=None,
+        artifacts=[],
+    )
+
+    @asynccontextmanager
+    async def fake_transaction_session():
+        yield object()
+
+    class FakeDocumentRepository:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_by_id(self, job_id, organization_id=None):
+            _ = organization_id
+            if job_id == job.id:
+                return job
+            return None
+
+        async def claim_for_processing(self, *, job_id, normalized_payload, cache_key, stale_before):
+            _ = stale_before
+            if job_id != job.id:
+                return None
+            job.status = DocumentJobStatus.PROCESSING
+            job.normalized_payload = normalized_payload
+            job.cache_key = cache_key
+            job.started_at = datetime.now(timezone.utc)
+            return job
+
+        async def requeue(self, job_obj, *, error_message=None):
+            job_obj.status = DocumentJobStatus.QUEUED
+            job_obj.error_message = error_message
+            job_obj.started_at = None
+            return job_obj
+
+    class FailingTemplateResolverService:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def resolve(
+            self,
+            *,
+            organization_id,
+            template_id,
+            template_version_id,
+            require_published: bool = False,
+        ):
+            _ = organization_id, template_id, template_version_id, require_published
+            raise ConnectionError("database connection reset")
+
+    monkeypatch.setattr(generation_module, "get_transaction_session", fake_transaction_session)
+    monkeypatch.setattr(generation_module, "DocumentRepository", FakeDocumentRepository)
+    monkeypatch.setattr(
+        generation_module,
+        "TemplateResolverService",
+        FailingTemplateResolverService,
+    )
+
+    service = DocumentGenerationService()
+
+    with pytest.raises(RetryableGenerationError, match="database connection reset"):
+        await service.process_job(job.id)
+
+    assert job.status == DocumentJobStatus.QUEUED
+    assert job.error_message == "database connection reset"
 
 
 @pytest.mark.anyio

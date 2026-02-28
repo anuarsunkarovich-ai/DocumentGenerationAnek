@@ -57,7 +57,7 @@ class ArtifactService:
                 checksum=sha256(content).hexdigest(),
                 size_bytes=stored.size_bytes,
                 is_cached=False,
-                expires_at=self.cache_expiration(),
+                expires_at=self.artifact_expiration(),
             )
         )
         await self._log_artifact_created(
@@ -101,7 +101,7 @@ class ArtifactService:
                 checksum=sha256(content).hexdigest(),
                 size_bytes=stored.size_bytes,
                 is_cached=False,
-                expires_at=self.cache_expiration(),
+                expires_at=self.artifact_expiration(),
             )
         )
         await self._log_artifact_created(
@@ -148,7 +148,7 @@ class ArtifactService:
                         checksum=artifact.checksum or sha256(content).hexdigest(),
                         size_bytes=stored.size_bytes,
                         is_cached=True,
-                        expires_at=artifact.expires_at or self.cache_expiration(),
+                        expires_at=artifact.expires_at or self.artifact_expiration(),
                     )
                 )
             )
@@ -168,10 +168,10 @@ class ArtifactService:
         """Return a temporary download URL for an artifact."""
         return await self._storage_service.get_download_url(storage_key)
 
-    def cache_expiration(self) -> datetime:
-        """Return the cache expiration timestamp for generated artifacts."""
+    def artifact_expiration(self) -> datetime:
+        """Return the retention deadline for generated artifacts."""
         return datetime.now(timezone.utc) + timedelta(
-            hours=self._settings.generation.cache_ttl_hours
+            days=self._settings.retention.generated_artifact_retention_days
         )
 
     async def _log_artifact_created(
