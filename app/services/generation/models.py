@@ -23,6 +23,9 @@ class ResolvedTemplateContext:
     template_version: str
     original_filename: str
     variable_schema: dict[str, Any]
+    storage_key: str | None = None
+    render_strategy: str = "constructor"
+    import_bindings: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)

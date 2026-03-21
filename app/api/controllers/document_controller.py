@@ -11,6 +11,7 @@ from app.dtos.document import (
     DocumentJobResponse,
     DocumentJobStatusResponse,
     DocumentVerificationResponse,
+    ImportedTemplateDocumentJobCreateRequest,
 )
 from app.services.document_service import DocumentService
 
@@ -32,6 +33,24 @@ class DocumentController:
     ) -> DocumentJobResponse:
         """Create a document generation job."""
         return await self._service.create_job(
+            payload,
+            background_tasks,
+            current_user_id=current_user_id,
+            current_api_key_id=current_api_key_id,
+            require_published_template=require_published_template,
+        )
+
+    async def create_imported_job(
+        self,
+        payload: ImportedTemplateDocumentJobCreateRequest,
+        background_tasks: BackgroundTasks,
+        *,
+        current_user_id: UUID | None,
+        current_api_key_id: UUID | None = None,
+        require_published_template: bool = False,
+    ) -> DocumentJobResponse:
+        """Create a document generation job for a confirmed imported DOCX template."""
+        return await self._service.create_imported_job(
             payload,
             background_tasks,
             current_user_id=current_user_id,

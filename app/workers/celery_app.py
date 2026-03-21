@@ -34,5 +34,9 @@ celery_app.conf.update(
             "task": "maintenance.cleanup",
             "schedule": settings.worker.maintenance_cleanup_interval_minutes * 60,
         },
+        "run-billing-cycle": {
+            "task": "billing.run_cycle",
+            "schedule": settings.worker.billing_cycle_interval_minutes * 60,
+        },
     },
 )

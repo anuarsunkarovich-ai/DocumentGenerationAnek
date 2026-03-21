@@ -9,6 +9,7 @@ Reference documentation for the Lean Generator backend.
 - [Local Setup With UV](setup.md#local-setup-with-uv)
 - [Docker Setup](setup.md#docker-setup)
 - [API Contract For Frontend](api-contract.md)
+- [Frontend Integration Guide](frontend-integration.md)
 - [Template Format Rules](templates.md)
 - [Constructor Block Schema](constructor-schema.md)
 - [Authorization And Tenancy](authorization.md)
@@ -26,3 +27,4 @@ Reference documentation for the Lean Generator backend.
 - API and payload documentation for client integrations
 - Setup and environment notes for local and containerized development
 - Architecture and generation workflow references
+- Billing, diagnostics, and operational admin surfaces

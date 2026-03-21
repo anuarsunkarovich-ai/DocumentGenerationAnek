@@ -28,9 +28,23 @@ class OrganizationPlan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
+    pending_plan_definition_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("plan_definitions.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     current_period_start: Mapped[date] = mapped_column(Date, nullable=False)
     current_period_end: Mapped[date] = mapped_column(Date, nullable=False)
 
     organization: Mapped["Organization"] = relationship(back_populates="organization_plan")
-    plan: Mapped["PlanDefinition"] = relationship(back_populates="organization_plans")
+    plan: Mapped["PlanDefinition"] = relationship(
+        back_populates="organization_plans",
+        foreign_keys=[plan_definition_id],
+    )
+    pending_plan: Mapped["PlanDefinition | None"] = relationship(
+        back_populates="pending_organization_plans",
+        foreign_keys=[pending_plan_definition_id],
+    )
+    billing_invoices: Mapped[list["BillingInvoice"]] = relationship(back_populates="subscription")

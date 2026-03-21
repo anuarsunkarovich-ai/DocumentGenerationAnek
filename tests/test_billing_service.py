@@ -1,5 +1,6 @@
-"""Tests for plan provisioning, metering, and billing enforcement."""
+"""Tests for plan provisioning, metering, billing enforcement, and invoice automation."""
 
+from datetime import date
 from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
@@ -52,6 +53,12 @@ def install_billing_test_doubles(monkeypatch, state: dict) -> None:
         async def get_by_code(self, code: str):
             return state["plans_by_code"].get(code)
 
+        async def list_active(self):
+            return sorted(
+                state["plans_by_code"].values(),
+                key=lambda item: (item.monthly_price_cents, item.code),
+            )
+
     class FakeOrganizationPlanRepository:
         def __init__(self, session: object) -> None:
             _ = session
@@ -61,20 +68,52 @@ def install_billing_test_doubles(monkeypatch, state: dict) -> None:
 
         async def create(self, organization_plan):
             created_plan = SimpleNamespace(
+                id=uuid4(),
                 organization_id=organization_plan.organization_id,
                 plan_definition_id=organization_plan.plan_definition_id,
+                pending_plan_definition_id=organization_plan.pending_plan_definition_id,
                 status=organization_plan.status,
                 current_period_start=organization_plan.current_period_start,
                 current_period_end=organization_plan.current_period_end,
                 plan=state["plans_by_id"][organization_plan.plan_definition_id],
+                pending_plan=None,
             )
             state["subscriptions"][organization_plan.organization_id] = created_plan
             return created_plan
 
-        async def update_period(self, organization_plan, *, period_start, period_end):
+        async def update_period(
+            self,
+            organization_plan,
+            *,
+            period_start,
+            period_end,
+            plan_definition_id=None,
+            pending_plan_definition_id=None,
+        ):
+            if plan_definition_id is not None:
+                organization_plan.plan_definition_id = plan_definition_id
+                organization_plan.plan = state["plans_by_id"][plan_definition_id]
+            organization_plan.pending_plan_definition_id = pending_plan_definition_id
+            organization_plan.pending_plan = (
+                state["plans_by_id"][pending_plan_definition_id]
+                if pending_plan_definition_id is not None
+                else None
+            )
             organization_plan.current_period_start = period_start
             organization_plan.current_period_end = period_end
             return organization_plan
+
+        async def schedule_plan_change(self, organization_plan, *, pending_plan_definition_id):
+            organization_plan.pending_plan_definition_id = pending_plan_definition_id
+            organization_plan.pending_plan = state["plans_by_id"][pending_plan_definition_id]
+            return organization_plan
+
+        async def list_due_for_renewal(self, *, as_of):
+            return [
+                item
+                for item in state["subscriptions"].values()
+                if item.status == "active" and item.current_period_end <= as_of
+            ]
 
     class FakeOrganizationUsageMeterRepository:
         def __init__(self, session: object) -> None:
@@ -103,6 +142,31 @@ def install_billing_test_doubles(monkeypatch, state: dict) -> None:
             usage_meter.premium_feature_usage[feature_key] = (
                 int(usage_meter.premium_feature_usage.get(feature_key, 0)) + amount
             )
+
+    class FakeBillingInvoiceRepository:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_by_period(self, *, organization_id, period_start, period_end):
+            return state["billing_invoices"].get((organization_id, period_start, period_end))
+
+        async def create(self, invoice):
+            if getattr(invoice, "id", None) is None:
+                invoice.id = uuid4()
+            invoice.created_at = getattr(invoice, "created_at", invoice.issued_at)
+            state["billing_invoices"][
+                (invoice.organization_id, invoice.period_start, invoice.period_end)
+            ] = invoice
+            return invoice
+
+        async def list_for_organization(self, *, organization_id, limit):
+            invoices = [
+                invoice
+                for invoice in state["billing_invoices"].values()
+                if invoice.organization_id == organization_id
+            ]
+            invoices.sort(key=lambda item: (item.period_start, item.created_at), reverse=True)
+            return invoices[:limit]
 
     class FakeTemplateRepository:
         def __init__(self, session: object) -> None:
@@ -172,6 +236,11 @@ def install_billing_test_doubles(monkeypatch, state: dict) -> None:
         "DocumentArtifactRepository",
         FakeDocumentArtifactRepository,
     )
+    monkeypatch.setattr(
+        billing_service_module,
+        "BillingInvoiceRepository",
+        FakeBillingInvoiceRepository,
+    )
 
 
 def build_billing_state() -> dict:
@@ -186,6 +255,8 @@ def build_billing_state() -> dict:
         max_templates=3,
         max_users=2,
         storage_quota_bytes=1000,
+        monthly_price_cents=0,
+        currency_code="USD",
         audit_retention_days=30,
         signature_support=False,
         is_active=True,
@@ -199,6 +270,8 @@ def build_billing_state() -> dict:
         max_templates=20,
         max_users=10,
         storage_quota_bytes=100000,
+        monthly_price_cents=19900,
+        currency_code="USD",
         audit_retention_days=180,
         signature_support=True,
         is_active=True,
@@ -217,6 +290,7 @@ def build_billing_state() -> dict:
         "plans_by_id": {starter_plan.id: starter_plan, growth_plan.id: growth_plan},
         "subscriptions": {},
         "usage_meters": {},
+        "billing_invoices": {},
         "template_counts": {organization_id: 1},
         "user_counts": {organization_id: 1},
         "template_storage_bytes": {organization_id: 120},
@@ -323,3 +397,73 @@ async def test_billing_service_records_generation_storage_and_premium_usage(monk
     assert snapshot.usage_meter.generation_count == 1
     assert snapshot.usage_meter.storage_bytes == 450
     assert snapshot.usage_meter.premium_feature_usage["signature_requests"] == 1
+
+
+@pytest.mark.anyio
+async def test_billing_service_lists_active_plans(monkeypatch) -> None:
+    """The active plan catalog should be returned in price order."""
+    state = build_billing_state()
+    install_billing_test_doubles(monkeypatch, state)
+
+    plans = await BillingService().list_plans(session=cast(Any, object()))
+
+    assert [plan.code for plan in plans] == ["starter", "growth"]
+
+
+@pytest.mark.anyio
+async def test_billing_service_schedules_plan_change_for_next_cycle(monkeypatch) -> None:
+    """Plan changes should remain pending until the next billing renewal."""
+    state = build_billing_state()
+    install_billing_test_doubles(monkeypatch, state)
+    service = BillingService()
+
+    snapshot = await service.schedule_plan_change(
+        organization_id=state["organization_id"],
+        target_plan_code="growth",
+        session=cast(Any, object()),
+    )
+
+    assert snapshot.plan.code == "starter"
+    assert snapshot.subscription.pending_plan is not None
+    assert snapshot.subscription.pending_plan.code == "growth"
+
+
+@pytest.mark.anyio
+async def test_billing_service_finalizes_invoice_and_rolls_subscription(monkeypatch) -> None:
+    """Billing-cycle automation should issue one invoice and activate the pending plan."""
+    state = build_billing_state()
+    install_billing_test_doubles(monkeypatch, state)
+    organization_id = state["organization_id"]
+    starter_plan = state["plans_by_code"]["starter"]
+    growth_plan = state["plans_by_code"]["growth"]
+    state["subscriptions"][organization_id] = SimpleNamespace(
+        id=uuid4(),
+        organization_id=organization_id,
+        plan_definition_id=starter_plan.id,
+        pending_plan_definition_id=growth_plan.id,
+        status="active",
+        current_period_start=date(2026, 2, 1),
+        current_period_end=date(2026, 3, 1),
+        plan=starter_plan,
+        pending_plan=growth_plan,
+    )
+
+    result = await BillingService().run_billing_cycle(
+        organization_id=organization_id,
+        as_of=date(2026, 3, 2),
+        session=cast(Any, object()),
+    )
+
+    assert result.finalized_invoice_count == 1
+    assert result.renewed_subscription_count == 1
+    assert result.billed_organization_ids == [organization_id]
+
+    invoices = list(state["billing_invoices"].values())
+    assert len(invoices) == 1
+    assert invoices[0].plan_code == "starter"
+    assert invoices[0].subtotal_cents == 0
+    subscription = state["subscriptions"][organization_id]
+    assert subscription.plan.code == "growth"
+    assert subscription.pending_plan is None
+    assert subscription.current_period_start == date(2026, 3, 1)
+    assert subscription.current_period_end == date(2026, 4, 1)

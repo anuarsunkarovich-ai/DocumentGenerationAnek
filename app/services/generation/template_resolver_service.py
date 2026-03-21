@@ -73,4 +73,7 @@ class TemplateResolverService:
             template_version=template_version.version,
             original_filename=template_version.original_filename,
             variable_schema=template_version.variable_schema,
+            storage_key=template_version.storage_key,
+            render_strategy=template_version.render_strategy,
+            import_bindings=template_version.import_bindings,
         )

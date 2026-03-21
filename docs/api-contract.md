@@ -106,6 +106,151 @@ Protected route. Revokes the supplied refresh token for the authenticated user.
 
 Protected route. Returns the authenticated user profile and organization summary.
 
+## Billing
+
+Automatic billing is organization-scoped and provider-agnostic at this stage.
+
+What exists now:
+
+- active plan catalog
+- current subscription snapshot
+- pending plan changes that apply at the next renewal boundary
+- finalized monthly invoices
+- scheduled monthly rollover via Celery beat
+
+What does not exist yet:
+
+- external payment processor checkout
+- webhook-driven charge reconciliation
+- invoice payment collection
+
+### `GET /api/v1/admin/billing/plans?organization_id=<uuid>`
+
+Admin-only route. Returns the active plan catalog.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "code": "growth",
+      "name": "Growth",
+      "billable_unit": "per_organization",
+      "monthly_generation_cap": 1000,
+      "max_templates": 50,
+      "max_users": 15,
+      "storage_quota_bytes": 5368709120,
+      "monthly_price_cents": 19900,
+      "currency_code": "USD",
+      "audit_retention_days": 180,
+      "signature_support": true,
+      "is_active": true
+    }
+  ]
+}
+```
+
+### `GET /api/v1/admin/billing/snapshot?organization_id=<uuid>`
+
+Admin-only route. Returns the current subscription, current-period meter, and any pending plan change.
+
+Response:
+
+```json
+{
+  "subscription": {
+    "organization_id": "uuid",
+    "status": "active",
+    "current_period_start": "2026-03-01",
+    "current_period_end": "2026-04-01",
+    "plan": {
+      "id": "uuid",
+      "code": "starter",
+      "name": "Starter",
+      "billable_unit": "per_organization",
+      "monthly_generation_cap": 100,
+      "max_templates": 5,
+      "max_users": 3,
+      "storage_quota_bytes": 104857600,
+      "monthly_price_cents": 0,
+      "currency_code": "USD",
+      "audit_retention_days": 30,
+      "signature_support": false,
+      "is_active": true
+    },
+    "pending_plan": {
+      "id": "uuid",
+      "code": "growth",
+      "name": "Growth",
+      "billable_unit": "per_organization",
+      "monthly_generation_cap": 1000,
+      "max_templates": 50,
+      "max_users": 15,
+      "storage_quota_bytes": 5368709120,
+      "monthly_price_cents": 19900,
+      "currency_code": "USD",
+      "audit_retention_days": 180,
+      "signature_support": true,
+      "is_active": true
+    }
+  },
+  "usage_meter": {
+    "period_start": "2026-03-01",
+    "period_end": "2026-04-01",
+    "generation_count": 12,
+    "storage_bytes": 4096,
+    "template_count": 4,
+    "user_count": 2,
+    "premium_feature_usage": {
+      "signature_requests": 1
+    }
+  }
+}
+```
+
+### `GET /api/v1/admin/billing/invoices?organization_id=<uuid>&limit=25`
+
+Admin-only route. Returns recent finalized invoices for one organization.
+
+### `POST /api/v1/admin/billing/subscription/change`
+
+Admin-only route. Schedules a plan change for the next renewal boundary.
+
+Request:
+
+```json
+{
+  "organization_id": "uuid",
+  "target_plan_code": "growth"
+}
+```
+
+Response is the same shape as `GET /api/v1/admin/billing/snapshot`.
+
+### `POST /api/v1/admin/billing/cycle/run`
+
+Admin-only route. Triggers one immediate billing-cycle pass for the selected organization.
+
+Request:
+
+```json
+{
+  "organization_id": "uuid"
+}
+```
+
+Response:
+
+```json
+{
+  "finalized_invoice_count": 1,
+  "renewed_subscription_count": 1,
+  "billed_organization_ids": ["uuid"]
+}
+```
+
 ## API Keys
 
 ### `POST /api/v1/admin/api-keys`

@@ -9,12 +9,18 @@ from app.core.database import get_transaction_session
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.dtos.template import (
     TemplateDetailResponse,
+    TemplateImportAnalysisResponse,
+    TemplateImportConfirmationResponse,
+    TemplateImportConfirmRequest,
+    TemplateImportInspectionResponse,
+    TemplateImportTemplateizeRequest,
     TemplateIngestionResponse,
     TemplateListResponse,
     TemplateRegisterRequest,
     TemplateResponse,
     TemplateSchemaExtractionResponse,
     TemplateSchemaResponse,
+    TemplateTemplateizationConfirmationResponse,
     TemplateVersionResponse,
     TemplateVersionSummary,
 )
@@ -25,6 +31,7 @@ from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.template_repository import TemplateRepository
 from app.repositories.template_version_repository import TemplateVersionRepository
 from app.services.billing_service import BillingService
+from app.services.docx_template_import_service import DocxTemplateImportService
 from app.services.security_service import SecurityService
 from app.services.storage import StorageService, get_storage_service
 from app.services.template_schema_service import TemplateSchemaService
@@ -37,11 +44,13 @@ class TemplateService:
         self,
         storage_service: StorageService | None = None,
         schema_service: TemplateSchemaService | None = None,
+        import_service: DocxTemplateImportService | None = None,
         security_service: SecurityService | None = None,
     ) -> None:
         """Configure service dependencies."""
         self._storage_service = storage_service or get_storage_service()
         self._schema_service = schema_service or TemplateSchemaService()
+        self._import_service = import_service or DocxTemplateImportService()
         self._security_service = security_service or SecurityService()
         self._billing_service = BillingService()
 
@@ -328,6 +337,203 @@ class TemplateService:
         )
         return self._schema_service.extract_schema(safe_file_name, content)
 
+    async def analyze_import_from_upload(
+        self,
+        file: UploadFile,
+    ) -> TemplateImportAnalysisResponse:
+        """Analyze a regular DOCX upload and return likely field candidates."""
+        content = await file.read()
+        safe_file_name = self._security_service.validate_template_upload(
+            file_name=file.filename or "template.docx",
+            content_type=file.content_type,
+            content=content,
+        )
+        return self._import_service.analyze(safe_file_name, content)
+
+    async def inspect_import_from_upload(
+        self,
+        file: UploadFile,
+    ) -> TemplateImportInspectionResponse:
+        """Inspect a DOCX upload for assisted templateization."""
+        content = await file.read()
+        safe_file_name = self._security_service.validate_template_upload(
+            file_name=file.filename or "template.docx",
+            content_type=file.content_type,
+            content=content,
+        )
+        return self._import_service.inspect(safe_file_name, content)
+
+    async def analyze_import_for_template(
+        self,
+        *,
+        organization_id: UUID,
+        template_id: UUID,
+    ) -> TemplateImportAnalysisResponse:
+        """Analyze the current stored DOCX template as an imported source document."""
+        async with get_transaction_session() as session:
+            template_repository = TemplateRepository(session)
+            template = await template_repository.get_by_id(
+                template_id=template_id,
+                organization_id=organization_id,
+            )
+            if template is None:
+                raise NotFoundError("Template was not found.")
+
+            current_version = next(
+                (version for version in template.versions if version.is_current),
+                None,
+            )
+            if current_version is None:
+                raise NotFoundError("Current template version was not found.")
+
+            content = await self._storage_service.download_bytes(current_version.storage_key)
+            return self._import_service.analyze(current_version.original_filename, content)
+
+    async def inspect_import_for_template(
+        self,
+        *,
+        organization_id: UUID,
+        template_id: UUID,
+    ) -> TemplateImportInspectionResponse:
+        """Inspect the current stored DOCX template for manual templateization."""
+        async with get_transaction_session() as session:
+            template_repository = TemplateRepository(session)
+            template = await template_repository.get_by_id(
+                template_id=template_id,
+                organization_id=organization_id,
+            )
+            if template is None:
+                raise NotFoundError("Template was not found.")
+
+            current_version = next(
+                (version for version in template.versions if version.is_current),
+                None,
+            )
+            if current_version is None:
+                raise NotFoundError("Current template version was not found.")
+
+            content = await self._storage_service.download_bytes(current_version.storage_key)
+            return self._import_service.inspect(current_version.original_filename, content)
+
+    async def confirm_import_for_template(
+        self,
+        *,
+        organization_id: UUID,
+        template_id: UUID,
+        payload: TemplateImportConfirmRequest,
+    ) -> TemplateImportConfirmationResponse:
+        """Persist confirmed imported-DOCX bindings on the current template version."""
+        async with get_transaction_session() as session:
+            template_repository = TemplateRepository(session)
+            version_repository = TemplateVersionRepository(session)
+
+            template = await template_repository.get_by_id(
+                template_id=template_id,
+                organization_id=organization_id,
+            )
+            if template is None:
+                raise NotFoundError("Template was not found.")
+
+            current_version = next(
+                (version for version in template.versions if version.is_current),
+                None,
+            )
+            if current_version is None:
+                raise NotFoundError("Current template version was not found.")
+
+            content = await self._storage_service.download_bytes(current_version.storage_key)
+            analysis = self._import_service.analyze(current_version.original_filename, content)
+            if analysis.analysis_checksum != payload.analysis_checksum:
+                raise ValidationError(
+                    "Import confirmation does not match the current stored DOCX analysis."
+                )
+
+            bindings, schema = self._import_service.confirm_bindings(
+                analysis=analysis,
+                confirmations=payload.bindings,
+            )
+            await version_repository.update_import_configuration(
+                current_version,
+                render_strategy="docx_import",
+                import_analysis=analysis.model_dump(mode="json"),
+                import_bindings=[binding.model_dump(mode="json") for binding in bindings],
+                variable_schema=schema.model_dump(mode="json"),
+                component_schema=[component.model_dump(mode="json") for component in schema.components],
+            )
+
+            return TemplateImportConfirmationResponse(
+                organization_id=template.organization_id,
+                template_id=template.id,
+                template_version_id=current_version.id,
+                render_strategy=current_version.render_strategy,
+                analysis_payload=analysis,
+                schema_payload=schema,
+                confirmed_binding_count=len(bindings),
+                bindings=bindings,
+            )
+
+    async def templateize_import_for_template(
+        self,
+        *,
+        organization_id: UUID,
+        template_id: UUID,
+        payload: TemplateImportTemplateizeRequest,
+    ) -> TemplateTemplateizationConfirmationResponse:
+        """Persist manual selections for assisted DOCX templateization."""
+        async with get_transaction_session() as session:
+            template_repository = TemplateRepository(session)
+            version_repository = TemplateVersionRepository(session)
+
+            template = await template_repository.get_by_id(
+                template_id=template_id,
+                organization_id=organization_id,
+            )
+            if template is None:
+                raise NotFoundError("Template was not found.")
+
+            current_version = next(
+                (version for version in template.versions if version.is_current),
+                None,
+            )
+            if current_version is None:
+                raise NotFoundError("Current template version was not found.")
+
+            content = await self._storage_service.download_bytes(current_version.storage_key)
+            inspection = self._import_service.inspect(current_version.original_filename, content)
+            if inspection.inspection_checksum != payload.inspection_checksum:
+                raise ValidationError(
+                    "Templateization request does not match the current stored DOCX inspection."
+                )
+
+            bindings, schema = self._import_service.templateize_from_selections(
+                inspection=inspection,
+                selections=payload.selections,
+            )
+            await version_repository.update_import_configuration(
+                current_version,
+                render_strategy="docx_import",
+                import_analysis={
+                    "mode": "manual_templateization",
+                    "inspection_checksum": inspection.inspection_checksum,
+                    "paragraph_count": inspection.paragraph_count,
+                    "selections": payload.model_dump(mode="json")["selections"],
+                },
+                import_bindings=[binding.model_dump(mode="json") for binding in bindings],
+                variable_schema=schema.model_dump(mode="json"),
+                component_schema=[component.model_dump(mode="json") for component in schema.components],
+            )
+
+            return TemplateTemplateizationConfirmationResponse(
+                organization_id=template.organization_id,
+                template_id=template.id,
+                template_version_id=current_version.id,
+                render_strategy=current_version.render_strategy,
+                inspection_payload=inspection,
+                schema_payload=schema,
+                confirmed_binding_count=len(bindings),
+                bindings=bindings,
+            )
+
     async def _get_or_create_template(
         self,
         *,
@@ -397,6 +603,8 @@ class TemplateService:
                 storage_key=version.storage_key,
                 checksum=version.checksum,
                 notes=version.notes,
+                render_strategy=version.render_strategy,
+                imported_binding_count=len(version.import_bindings),
                 schema_payload=schema,
             ),
         )
@@ -470,6 +678,8 @@ class TemplateService:
                     storage_key=current_version.storage_key,
                     checksum=current_version.checksum,
                     notes=current_version.notes,
+                    render_strategy=current_version.render_strategy,
+                    imported_binding_count=len(current_version.import_bindings),
                     schema_payload=TemplateSchemaResponse.model_validate(
                         current_version.variable_schema
                     ),

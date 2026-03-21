@@ -12,6 +12,7 @@ from app.dtos.document import (
     DocumentJobResponse,
     DocumentVerificationArtifactResponse,
     DocumentVerificationResponse,
+    ImportedTemplateDocumentJobCreateRequest,
 )
 from app.services.document_service import DocumentService
 
@@ -72,6 +73,61 @@ def test_generate_endpoint_returns_task_id(
                     }
                 ]
             },
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+
+    assert payload["task_id"] == str(task_id)
+    assert payload["organization_id"] == str(organization_id)
+    assert payload["status"] == "queued"
+
+
+def test_generate_imported_endpoint_returns_task_id(
+    authenticated_client: TestClient,
+    authenticated_membership,
+    monkeypatch,
+) -> None:
+    """Ensure the imported-template generation route preserves the async job contract."""
+    organization_id = authenticated_membership.organization_id
+    template_id = uuid4()
+    task_id = uuid4()
+
+    async def fake_create_imported_job(
+        self: DocumentService,
+        payload: ImportedTemplateDocumentJobCreateRequest,
+        background_tasks: BackgroundTasks,
+        *,
+        current_user_id,
+        current_api_key_id=None,
+        require_published_template: bool = False,
+    ) -> DocumentJobResponse:
+        assert payload.organization_id == organization_id
+        assert payload.template_id == template_id
+        assert payload.data["client_name"] == "Anek LLC"
+        assert current_user_id == authenticated_membership.user_id
+        assert current_api_key_id is None
+        assert require_published_template is False
+        assert background_tasks is not None
+        return DocumentJobResponse(
+            task_id=task_id,
+            organization_id=payload.organization_id,
+            status="queued",
+            template_id=payload.template_id,
+            template_version_id=payload.template_version_id,
+            requested_by_user_id=current_user_id,
+            from_cache=False,
+        )
+
+    monkeypatch.setattr(DocumentService, "create_imported_job", fake_create_imported_job)
+
+    response = authenticated_client.post(
+        "/api/v1/documents/generate-imported",
+        json={
+            "organization_id": str(organization_id),
+            "template_id": str(template_id),
+            "data": {"client_name": "Anek LLC"},
         },
     )
 

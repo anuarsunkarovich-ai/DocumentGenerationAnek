@@ -5,8 +5,21 @@
 - file type: `.docx`
 - storage format: DOCX archive in object storage
 - extraction source: XML parts under the `word/` folder inside the DOCX package
+- import analysis source: rendered paragraphs, headers, footers, and table cells in ordinary DOCX files
 
 The backend currently does not support `.doc`, `.odt`, `.pdf`, or raw HTML as template sources.
+
+## Imported DOCX Flow
+
+Regular DOCX files without `{{placeholders}}` can now be imported in a confirmation flow:
+
+1. Upload or register the source DOCX as a template version.
+2. Call `POST /api/v1/templates/import/analyze` for a raw upload preview, or `POST /api/v1/templates/{template_id}/import/analyze` for the stored current version.
+3. Show the returned candidates to the user and collect confirmed binding keys.
+4. Persist the confirmation with `POST /api/v1/templates/{template_id}/import/confirm`.
+5. Generate from the confirmed imported template with `POST /api/v1/documents/generate-imported`.
+
+Confirmed imported templates set `render_strategy` to `docx_import` and keep using the original stored DOCX as the generation source so layout, tables, and typography remain intact.
 
 ## Variable Syntax
 
@@ -39,6 +52,14 @@ When a template is parsed, the backend extracts:
 - inferred `component_type`
 - `occurrences`
 - XML `sources`
+
+For imported DOCX analysis, the backend also returns:
+
+- candidate `confidence`
+- `detection_kind`
+- `paragraph_path`
+- `raw_fragment`
+- `fragment_start` and `fragment_end`
 
 ## Inference Rules
 
@@ -89,5 +110,7 @@ Frontend should treat extracted template schema as the source of truth for:
 - which fields to render
 - which blocks can be prefilled
 - which values are table-like or image-like
+
+For imported DOCX templates, frontend should also treat the returned candidate list as reviewable suggestions, not final truth, until the user confirms the binding keys.
 
 Do not duplicate template parsing logic in the frontend.

@@ -17,6 +17,10 @@
 6. Frontend polls `GET /api/v1/documents/jobs/{task_id}?organization_id=...`.
 7. When the job becomes `completed`, frontend uses `download` or `preview` endpoints.
 
+For confirmed imported DOCX templates, frontend skips the constructor payload and sends
+`POST /api/v1/documents/generate-imported` with the confirmed binding values. The worker fills the
+stored DOCX source directly so the uploaded layout is preserved.
+
 ## Polling Recommendation
 
 Suggested polling rhythm:
@@ -48,10 +52,17 @@ Current generation flow stores:
 - DOCX artifact
 - PDF artifact
 
+Confirmed imported DOCX generation currently stores:
+
+- DOCX artifact with preserved source layout
+
 Download and preview routes currently prefer:
 
 1. PDF
 2. DOCX
+
+This means imported-template jobs still work with the same polling, download, and preview endpoints;
+they simply fall through to the DOCX artifact because no PDF is produced in that path.
 
 ## Error Handling
 

@@ -36,6 +36,26 @@ class TemplateVersionRepository:
         await self._session.refresh(template_version)
         return template_version
 
+    async def update_import_configuration(
+        self,
+        template_version: TemplateVersion,
+        *,
+        render_strategy: str,
+        import_analysis: dict,
+        import_bindings: list[dict],
+        variable_schema: dict,
+        component_schema: list[dict],
+    ) -> TemplateVersion:
+        """Persist confirmed imported-DOCX bindings for an existing template version."""
+        template_version.render_strategy = render_strategy
+        template_version.import_analysis = import_analysis
+        template_version.import_bindings = import_bindings
+        template_version.variable_schema = variable_schema
+        template_version.component_schema = component_schema
+        await self._session.flush()
+        await self._session.refresh(template_version)
+        return template_version
+
     async def get_by_template_and_version(
         self,
         *,

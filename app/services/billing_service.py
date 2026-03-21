@@ -1,9 +1,9 @@
-"""Plan assignment, monthly metering, and service-boundary enforcement."""
+"""Plan assignment, monthly metering, invoice generation, and billing automation."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
 from inspect import isawaitable
 from typing import Callable
 from uuid import UUID
@@ -13,9 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_transaction_session
 from app.core.exceptions import ConflictError, NotFoundError
 from app.dtos.constructor import DocumentConstructor
+from app.models.billing_invoice import BillingInvoice
 from app.models.organization_plan import OrganizationPlan
 from app.models.organization_usage_meter import OrganizationUsageMeter
 from app.models.plan_definition import PlanDefinition
+from app.repositories.billing_invoice_repository import BillingInvoiceRepository
 from app.repositories.document_artifact_repository import DocumentArtifactRepository
 from app.repositories.organization_plan_repository import OrganizationPlanRepository
 from app.repositories.organization_repository import OrganizationRepository
@@ -35,11 +37,29 @@ class BillingSnapshot:
     usage_meter: OrganizationUsageMeter
 
 
+@dataclass(frozen=True)
+class BillingCycleRunResult:
+    """Summary of one automated billing-cycle pass."""
+
+    finalized_invoice_count: int = 0
+    renewed_subscription_count: int = 0
+    billed_organization_ids: list[UUID] = field(default_factory=list)
+
+
 class BillingService:
-    """Manage plan defaults, monthly meters, and business-limit checks."""
+    """Manage plan defaults, monthly meters, invoices, and business-limit checks."""
 
     DEFAULT_PLAN_CODE = "starter"
     SIGNATURE_FEATURE_KEY = "signature_requests"
+    PAYMENT_TERMS_DAYS = 7
+
+    async def list_plans(self, *, session: AsyncSession | None = None) -> list[PlanDefinition]:
+        """Return the active plan catalog."""
+        if session is not None:
+            return await PlanDefinitionRepository(session).list_active()
+
+        async with get_transaction_session() as managed_session:
+            return await PlanDefinitionRepository(managed_session).list_active()
 
     async def enforce_generation_allowed(
         self,
@@ -163,8 +183,73 @@ class BillingService:
         return await self._with_snapshot(
             organization_id=organization_id,
             session=session,
-            action=lambda resolved_session, billing_snapshot: billing_snapshot,
+            action=self._refresh_snapshot_usage,
         )
+
+    async def list_invoices(
+        self,
+        *,
+        organization_id: UUID,
+        limit: int = 25,
+        session: AsyncSession | None = None,
+    ) -> list[BillingInvoice]:
+        """Return recent invoices for one organization."""
+        if session is not None:
+            return await BillingInvoiceRepository(session).list_for_organization(
+                organization_id=organization_id,
+                limit=limit,
+            )
+
+        async with get_transaction_session() as managed_session:
+            return await BillingInvoiceRepository(managed_session).list_for_organization(
+                organization_id=organization_id,
+                limit=limit,
+            )
+
+    async def schedule_plan_change(
+        self,
+        *,
+        organization_id: UUID,
+        target_plan_code: str,
+        session: AsyncSession | None = None,
+    ) -> BillingSnapshot:
+        """Queue a plan change for the next renewal boundary."""
+        normalized_plan_code = target_plan_code.strip().lower()
+        if not normalized_plan_code:
+            raise NotFoundError("Target billing plan was not found.")
+
+        if session is not None:
+            return await self._schedule_plan_change(
+                session,
+                organization_id=organization_id,
+                target_plan_code=normalized_plan_code,
+            )
+
+        async with get_transaction_session() as managed_session:
+            return await self._schedule_plan_change(
+                managed_session,
+                organization_id=organization_id,
+                target_plan_code=normalized_plan_code,
+            )
+
+    async def run_billing_cycle(
+        self,
+        *,
+        organization_id: UUID | None = None,
+        as_of: date | None = None,
+        session: AsyncSession | None = None,
+    ) -> BillingCycleRunResult:
+        """Finalize ended billing periods and roll subscriptions into the next cycle."""
+        billing_date = as_of or datetime.now(timezone.utc).date()
+        if session is not None:
+            return await self._run_billing_cycle(session, organization_id=organization_id, as_of=billing_date)
+
+        async with get_transaction_session() as managed_session:
+            return await self._run_billing_cycle(
+                managed_session,
+                organization_id=organization_id,
+                as_of=billing_date,
+            )
 
     async def _with_snapshot(
         self,
@@ -197,7 +282,6 @@ class BillingService:
         if organization is None:
             raise NotFoundError("Organization was not found.")
 
-        period_start, period_end = self._current_period_bounds()
         plan_repository = PlanDefinitionRepository(session)
         subscription_repository = OrganizationPlanRepository(session)
         usage_repository = OrganizationUsageMeterRepository(session)
@@ -207,10 +291,12 @@ class BillingService:
             default_plan = await plan_repository.get_by_code(self.DEFAULT_PLAN_CODE)
             if default_plan is None:
                 raise NotFoundError("Default billing plan was not found.")
-            subscription = await subscription_repository.create(
+            period_start, period_end = self._current_period_bounds()
+            await subscription_repository.create(
                 OrganizationPlan(
                     organization_id=organization_id,
                     plan_definition_id=default_plan.id,
+                    pending_plan_definition_id=None,
                     status="active",
                     current_period_start=period_start,
                     current_period_end=period_end,
@@ -219,24 +305,19 @@ class BillingService:
             subscription = await subscription_repository.get_by_organization_id(organization_id)
             if subscription is None:
                 raise NotFoundError("Organization billing plan was not created.")
-        elif subscription.current_period_start != period_start or subscription.current_period_end != period_end:
-            subscription = await subscription_repository.update_period(
-                subscription,
-                period_start=period_start,
-                period_end=period_end,
-            )
+        else:
+            subscription, _ = await self._roll_subscription_forward_if_needed(session, subscription)
 
-        plan = subscription.plan
         usage_meter = await usage_repository.get_by_period(
             organization_id=organization_id,
-            period_start=period_start,
+            period_start=subscription.current_period_start,
         )
         if usage_meter is None:
             usage_meter = await usage_repository.create(
                 OrganizationUsageMeter(
                     organization_id=organization_id,
-                    period_start=period_start,
-                    period_end=period_end,
+                    period_start=subscription.current_period_start,
+                    period_end=subscription.current_period_end,
                     generation_count=0,
                     storage_bytes=await self._current_storage_bytes(session, organization_id),
                     template_count=await TemplateRepository(session).count_by_organization(organization_id),
@@ -246,7 +327,7 @@ class BillingService:
             )
 
         return BillingSnapshot(
-            plan=plan,
+            plan=subscription.plan,
             subscription=subscription,
             usage_meter=usage_meter,
         )
@@ -330,6 +411,218 @@ class BillingService:
         )
         return template_count
 
+    async def _sync_user_count(
+        self,
+        session: AsyncSession,
+        snapshot: BillingSnapshot,
+    ) -> int:
+        user_count = await UserRepository(session).count_active_for_organization(
+            snapshot.subscription.organization_id
+        )
+        await OrganizationUsageMeterRepository(session).set_user_count(
+            snapshot.usage_meter,
+            user_count=user_count,
+        )
+        return user_count
+
+    async def _refresh_snapshot_usage(
+        self,
+        session: AsyncSession,
+        snapshot: BillingSnapshot,
+    ) -> BillingSnapshot:
+        await self._sync_template_count(session, snapshot)
+        await self._sync_user_count(session, snapshot)
+        return snapshot
+
+    async def _schedule_plan_change(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        target_plan_code: str,
+    ) -> BillingSnapshot:
+        snapshot = await self._ensure_snapshot(session, organization_id=organization_id)
+        target_plan = await PlanDefinitionRepository(session).get_by_code(target_plan_code)
+        if target_plan is None or not target_plan.is_active:
+            raise NotFoundError("Target billing plan was not found.")
+
+        if snapshot.subscription.plan_definition_id == target_plan.id:
+            if snapshot.subscription.pending_plan_definition_id is None:
+                return await self._refresh_snapshot_usage(session, snapshot)
+            await OrganizationPlanRepository(session).schedule_plan_change(
+                snapshot.subscription,
+                pending_plan_definition_id=target_plan.id,
+            )
+            return await self._ensure_snapshot(session, organization_id=organization_id)
+
+        await OrganizationPlanRepository(session).schedule_plan_change(
+            snapshot.subscription,
+            pending_plan_definition_id=target_plan.id,
+        )
+        return await self._ensure_snapshot(session, organization_id=organization_id)
+
+    async def _run_billing_cycle(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID | None,
+        as_of: date,
+    ) -> BillingCycleRunResult:
+        subscription_repository = OrganizationPlanRepository(session)
+        if organization_id is not None:
+            subscription = await subscription_repository.get_by_organization_id(organization_id)
+            if subscription is None:
+                return BillingCycleRunResult()
+            subscription, invoice_count = await self._roll_subscription_forward_if_needed(
+                session,
+                subscription,
+                as_of=as_of,
+            )
+            renewed_count = invoice_count
+            billed_organization_ids = [organization_id] if invoice_count else []
+            _ = subscription
+            return BillingCycleRunResult(
+                finalized_invoice_count=invoice_count,
+                renewed_subscription_count=renewed_count,
+                billed_organization_ids=billed_organization_ids,
+            )
+
+        due_subscriptions = await subscription_repository.list_due_for_renewal(as_of=as_of)
+        billed_organization_ids: list[UUID] = []
+        invoice_count = 0
+        renewed_count = 0
+        for subscription in due_subscriptions:
+            updated_subscription, created_invoices = await self._roll_subscription_forward_if_needed(
+                session,
+                subscription,
+                as_of=as_of,
+            )
+            _ = updated_subscription
+            if created_invoices > 0:
+                billed_organization_ids.append(subscription.organization_id)
+                invoice_count += created_invoices
+                renewed_count += created_invoices
+
+        return BillingCycleRunResult(
+            finalized_invoice_count=invoice_count,
+            renewed_subscription_count=renewed_count,
+            billed_organization_ids=billed_organization_ids,
+        )
+
+    async def _roll_subscription_forward_if_needed(
+        self,
+        session: AsyncSession,
+        subscription: OrganizationPlan,
+        *,
+        as_of: date | None = None,
+    ) -> tuple[OrganizationPlan, int]:
+        billing_date = as_of or datetime.now(timezone.utc).date()
+        if subscription.current_period_end > billing_date:
+            return subscription, 0
+
+        repository = OrganizationPlanRepository(session)
+        invoice_count = 0
+        current_subscription = subscription
+        while current_subscription.current_period_end <= billing_date:
+            await self._issue_invoice_for_period(session, current_subscription)
+            invoice_count += 1
+            next_period_start = current_subscription.current_period_end
+            next_period_end = self._next_period_end(next_period_start)
+            next_plan_definition_id = (
+                current_subscription.pending_plan_definition_id
+                or current_subscription.plan_definition_id
+            )
+            current_subscription = await repository.update_period(
+                current_subscription,
+                period_start=next_period_start,
+                period_end=next_period_end,
+                plan_definition_id=next_plan_definition_id,
+                pending_plan_definition_id=None,
+            )
+            current_subscription = await repository.get_by_organization_id(
+                current_subscription.organization_id
+            )
+            if current_subscription is None:
+                raise NotFoundError("Organization billing plan was not found after renewal.")
+
+        return current_subscription, invoice_count
+
+    async def _issue_invoice_for_period(
+        self,
+        session: AsyncSession,
+        subscription: OrganizationPlan,
+    ) -> BillingInvoice:
+        invoice_repository = BillingInvoiceRepository(session)
+        existing_invoice = await invoice_repository.get_by_period(
+            organization_id=subscription.organization_id,
+            period_start=subscription.current_period_start,
+            period_end=subscription.current_period_end,
+        )
+        if existing_invoice is not None:
+            return existing_invoice
+
+        usage_summary = await self._resolve_usage_summary_for_period(session, subscription)
+        issued_at = datetime.now(timezone.utc)
+        subtotal_cents = int(subscription.plan.monthly_price_cents)
+        return await invoice_repository.create(
+            BillingInvoice(
+                organization_id=subscription.organization_id,
+                organization_plan_id=subscription.id,
+                plan_definition_id=subscription.plan_definition_id,
+                plan_code=subscription.plan.code,
+                currency_code=subscription.plan.currency_code,
+                status="issued",
+                period_start=subscription.current_period_start,
+                period_end=subscription.current_period_end,
+                subtotal_cents=subtotal_cents,
+                generation_count=usage_summary.generation_count,
+                template_count=usage_summary.template_count,
+                user_count=usage_summary.user_count,
+                storage_bytes=usage_summary.storage_bytes,
+                premium_feature_usage=dict(usage_summary.premium_feature_usage or {}),
+                line_items=[
+                    {
+                        "code": "base_plan",
+                        "description": f"{subscription.plan.name} monthly organization subscription",
+                        "quantity": 1,
+                        "unit_amount_cents": subtotal_cents,
+                        "subtotal_cents": subtotal_cents,
+                        "currency_code": subscription.plan.currency_code,
+                    }
+                ],
+                issued_at=issued_at,
+                due_at=issued_at + timedelta(days=self.PAYMENT_TERMS_DAYS),
+            )
+        )
+
+    async def _resolve_usage_summary_for_period(
+        self,
+        session: AsyncSession,
+        subscription: OrganizationPlan,
+    ) -> OrganizationUsageMeter:
+        usage_repository = OrganizationUsageMeterRepository(session)
+        usage_meter = await usage_repository.get_by_period(
+            organization_id=subscription.organization_id,
+            period_start=subscription.current_period_start,
+        )
+        if usage_meter is not None:
+            return usage_meter
+
+        return OrganizationUsageMeter(
+            organization_id=subscription.organization_id,
+            period_start=subscription.current_period_start,
+            period_end=subscription.current_period_end,
+            generation_count=0,
+            storage_bytes=await self._current_storage_bytes(session, subscription.organization_id),
+            template_count=await TemplateRepository(session).count_by_organization(
+                subscription.organization_id
+            ),
+            user_count=await UserRepository(session).count_active_for_organization(
+                subscription.organization_id
+            ),
+            premium_feature_usage={},
+        )
+
     async def _current_storage_bytes(self, session: AsyncSession, organization_id: UUID) -> int:
         template_bytes = await TemplateVersionRepository(session).sum_storage_bytes_for_organization(
             organization_id
@@ -345,8 +638,9 @@ class BillingService:
     def _current_period_bounds(self) -> tuple[date, date]:
         now = datetime.now(timezone.utc)
         period_start = date(now.year, now.month, 1)
-        if now.month == 12:
-            period_end = date(now.year + 1, 1, 1)
-        else:
-            period_end = date(now.year, now.month + 1, 1)
-        return period_start, period_end
+        return period_start, self._next_period_end(period_start)
+
+    def _next_period_end(self, period_start: date) -> date:
+        if period_start.month == 12:
+            return date(period_start.year + 1, 1, 1)
+        return date(period_start.year, period_start.month + 1, 1)

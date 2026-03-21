@@ -23,6 +23,7 @@ from app.dtos.document import (
     DocumentJobResponse,
     DocumentJobStatusResponse,
     DocumentVerificationResponse,
+    ImportedTemplateDocumentJobCreateRequest,
 )
 from app.models.user import User
 from app.services.document_service import DocumentService
@@ -119,6 +120,27 @@ async def create_document_job(
     membership = require_generation_access(current_user, payload.organization_id, request=request)
     controller = DocumentController(service=DocumentService())
     return await controller.create_job(
+        payload,
+        background_tasks,
+        current_user_id=membership.user_id,
+    )
+
+
+@router.post(
+    "/generate-imported",
+    response_model=DocumentJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_imported_document_job(
+    request: Request,
+    payload: ImportedTemplateDocumentJobCreateRequest,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> DocumentJobResponse:
+    """Queue a DOCX-preserving generation job for an imported template."""
+    membership = require_generation_access(current_user, payload.organization_id, request=request)
+    controller = DocumentController(service=DocumentService())
+    return await controller.create_imported_job(
         payload,
         background_tasks,
         current_user_id=membership.user_id,

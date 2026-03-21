@@ -10,6 +10,7 @@ from celery.signals import worker_process_init, worker_ready
 from app.core.config import get_settings
 from app.core.database import reset_database_manager
 from app.core.request_context import bind_context, clear_context
+from app.services.billing_service import BillingCycleRunResult, BillingService
 from app.services.generation.document_generation_service import (
     DocumentGenerationService,
     RetryableGenerationError,
@@ -36,6 +37,12 @@ class CleanupMaintenanceService(Protocol):
     """Protocol for services that can execute one maintenance pass."""
 
     async def cleanup(self) -> MaintenanceCleanupResult: ...
+
+
+class BillingCycleService(Protocol):
+    """Protocol for services that can execute one billing-cycle pass."""
+
+    async def run_billing_cycle(self) -> BillingCycleRunResult: ...
 
 
 def retry_delay_for_attempt(retry_count: int) -> int:
@@ -100,6 +107,21 @@ def _run_maintenance_cleanup(
     }
 
 
+def _run_billing_cycle(
+    *,
+    service: BillingCycleService | None = None,
+) -> dict[str, object]:
+    """Execute one automatic billing-cycle pass."""
+    reset_database_manager()
+    billing_service = service or BillingService()
+    result = asyncio.run(billing_service.run_billing_cycle())
+    return {
+        "finalized_invoice_count": result.finalized_invoice_count,
+        "renewed_subscription_count": result.renewed_subscription_count,
+        "billed_organization_ids": [str(item) for item in result.billed_organization_ids],
+    }
+
+
 @celery_app.task(
     bind=True,
     name="document_jobs.process",
@@ -144,6 +166,16 @@ def cleanup_maintenance(self) -> dict[str, int]:
     _ = self
     try:
         return _run_maintenance_cleanup()
+    finally:
+        clear_context()
+
+
+@celery_app.task(bind=True, name="billing.run_cycle")
+def run_billing_cycle(self) -> dict[str, object]:
+    """Finalize due invoices and roll subscriptions into the next monthly period."""
+    _ = self
+    try:
+        return _run_billing_cycle()
     finally:
         clear_context()
 

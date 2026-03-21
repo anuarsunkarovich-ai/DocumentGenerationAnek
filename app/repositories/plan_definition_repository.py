@@ -19,3 +19,13 @@ class PlanDefinitionRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def list_active(self) -> list[PlanDefinition]:
+        """Return active plans ordered by monthly price then code."""
+        statement: Select[tuple[PlanDefinition]] = (
+            select(PlanDefinition)
+            .where(PlanDefinition.is_active.is_(True))
+            .order_by(PlanDefinition.monthly_price_cents.asc(), PlanDefinition.code.asc())
+        )
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())

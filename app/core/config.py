@@ -234,6 +234,7 @@ class WorkerSettings(BaseModel):
     stale_job_recovery_batch_size: int = 100
     result_expires_seconds: int = 3600
     maintenance_cleanup_interval_minutes: int = 60
+    billing_cycle_interval_minutes: int = 60
 
 
 class RetentionSettings(BaseModel):

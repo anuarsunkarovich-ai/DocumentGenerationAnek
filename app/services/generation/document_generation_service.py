@@ -23,6 +23,7 @@ from app.services.audit_service import AuditService
 from app.services.billing_service import BillingService
 from app.services.generation.artifact_service import ArtifactService
 from app.services.generation.document_composer_service import DocumentComposerService
+from app.services.generation.docx_template_render_service import DocxTemplateRenderService
 from app.services.generation.pdf_render_service import PdfRenderService
 from app.services.generation.template_resolver_service import TemplateResolverService
 from app.services.generation.variable_mapper_service import VariableMapperService
@@ -48,6 +49,7 @@ class DocumentGenerationService:
         self._storage_service = get_storage_service()
         self._variable_mapper = VariableMapperService()
         self._composer = DocumentComposerService()
+        self._import_renderer = DocxTemplateRenderService()
         self._pdf_renderer = PdfRenderService()
         self._settings = get_settings()
         self._billing_service = BillingService()
@@ -75,17 +77,25 @@ class DocumentGenerationService:
                     template_id=job.template_id,
                     template_version_id=job.template_version_id,
                 )
-                constructor_payload = job.input_payload["constructor"]
                 data_payload = job.input_payload.get("data", {})
-
-                constructor = DocumentConstructor.model_validate(constructor_payload)
-                resolved_document, normalized_payload, cache_key = (
-                    self._variable_mapper.map_document(
+                generation_mode = job.input_payload.get("generation_mode", "constructor")
+                pdf_bytes: bytes | None = None
+                resolved_document = None
+                if generation_mode == "docx_import":
+                    normalized_payload, cache_key = self._import_renderer.prepare_payload(
                         context=context,
-                        constructor=constructor,
                         data=data_payload,
                     )
-                )
+                else:
+                    constructor_payload = job.input_payload["constructor"]
+                    constructor = DocumentConstructor.model_validate(constructor_payload)
+                    resolved_document, normalized_payload, cache_key = (
+                        self._variable_mapper.map_document(
+                            context=context,
+                            constructor=constructor,
+                            data=data_payload,
+                        )
+                    )
                 stale_before = datetime.now(timezone.utc) - timedelta(
                     seconds=self._settings.worker.stale_job_timeout_seconds
                 )
@@ -106,8 +116,20 @@ class DocumentGenerationService:
                     extra={"event": "document_job.processing_started"},
                 )
 
-            docx_bytes = self._composer.compose(resolved_document)
-            pdf_bytes = self._pdf_renderer.render(resolved_document)
+            if generation_mode == "docx_import":
+                if context.storage_key is None:
+                    raise ValidationError("Imported template source file is unavailable.")
+                source_bytes = await self._storage_service.download_bytes(context.storage_key)
+                docx_bytes = self._import_renderer.render(
+                    content=source_bytes,
+                    context=context,
+                    data=normalized_payload,
+                )
+            else:
+                if resolved_document is None:
+                    raise ValidationError("Constructor generation payload is invalid.")
+                docx_bytes = self._composer.compose(resolved_document)
+                pdf_bytes = self._pdf_renderer.render(resolved_document)
 
             async with get_transaction_session() as session:
                 repository = DocumentRepository(session)
@@ -119,7 +141,7 @@ class DocumentGenerationService:
                 artifact_service = ArtifactService(session, self._storage_service)
                 await self._billing_service.enforce_storage_delta_allowed(
                     organization_id=job.organization_id,
-                    additional_bytes=len(docx_bytes) + len(pdf_bytes),
+                    additional_bytes=len(docx_bytes) + (len(pdf_bytes) if pdf_bytes is not None else 0),
                     session=session,
                 )
                 await artifact_service.store_docx(
@@ -128,12 +150,13 @@ class DocumentGenerationService:
                     user_id=job.requested_by_user_id,
                     content=docx_bytes,
                 )
-                await artifact_service.store_pdf(
-                    context=context,
-                    job_id=job.id,
-                    user_id=job.requested_by_user_id,
-                    content=pdf_bytes,
-                )
+                if pdf_bytes is not None:
+                    await artifact_service.store_pdf(
+                        context=context,
+                        job_id=job.id,
+                        user_id=job.requested_by_user_id,
+                        content=pdf_bytes,
+                    )
                 await repository.mark_completed(job)
                 await audit_service.log_event(
                     organization_id=job.organization_id,
@@ -145,6 +168,7 @@ class DocumentGenerationService:
                         "template_id": str(job.template_id),
                         "template_version_id": str(job.template_version_id),
                         "from_cache": False,
+                        "generation_mode": generation_mode,
                     },
                 )
             duration_seconds = time.perf_counter() - started_at

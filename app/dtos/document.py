@@ -56,6 +56,21 @@ class PublicDocumentJobCreateRequest(BaseDTO):
         return DocumentJobCreateRequest.validate_data_payload(value)
 
 
+class ImportedTemplateDocumentJobCreateRequest(BaseDTO):
+    """Payload for generating directly from a confirmed imported DOCX template."""
+
+    organization_id: UUID
+    template_id: UUID
+    template_version_id: UUID | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("data")
+    @classmethod
+    def validate_data_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Validate incoming bound data size and key shape."""
+        return DocumentJobCreateRequest.validate_data_payload(value)
+
+
 class DocumentArtifactResponse(BaseDTO):
     """Artifact metadata returned to the frontend."""
 

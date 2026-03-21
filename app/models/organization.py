@@ -29,6 +29,9 @@ class Organization(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     usage_meters: Mapped[list["OrganizationUsageMeter"]] = relationship(
         back_populates="organization"
     )
+    billing_invoices: Mapped[list["BillingInvoice"]] = relationship(
+        back_populates="organization"
+    )
     templates: Mapped[list["Template"]] = relationship(back_populates="organization")
     document_jobs: Mapped[list["DocumentJob"]] = relationship(back_populates="organization")
     document_artifacts: Mapped[list["DocumentArtifact"]] = relationship(

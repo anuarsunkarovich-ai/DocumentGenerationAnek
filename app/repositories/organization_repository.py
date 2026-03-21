@@ -22,3 +22,11 @@ class OrganizationRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def list_active_ids(self) -> list[UUID]:
+        """Return identifiers for active organizations."""
+        statement = select(Organization.id).where(Organization.is_active.is_(True)).order_by(
+            Organization.created_at.asc()
+        )
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())

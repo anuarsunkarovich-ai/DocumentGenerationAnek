@@ -14,12 +14,19 @@ from app.api.dependencies.authorization import (
 from app.dtos.template import (
     TemplateAccessQuery,
     TemplateDetailResponse,
+    TemplateImportAnalysisResponse,
+    TemplateImportAnalyzeStoredRequest,
+    TemplateImportConfirmationResponse,
+    TemplateImportConfirmRequest,
+    TemplateImportInspectionResponse,
+    TemplateImportTemplateizeRequest,
     TemplateIngestionResponse,
     TemplateListQuery,
     TemplateListResponse,
     TemplateRegisterRequest,
     TemplateSchemaExtractionResponse,
     TemplateSchemaResponse,
+    TemplateTemplateizationConfirmationResponse,
     TemplateUploadRequest,
 )
 from app.models.user import User
@@ -124,6 +131,40 @@ async def extract_template_schema(
     return await controller.extract_schema_from_upload(file)
 
 
+@router.post(
+    "/import/analyze",
+    response_model=TemplateImportAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def analyze_template_import_upload(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    file: UploadFile = File(...),
+) -> TemplateImportAnalysisResponse:
+    """Analyze a regular DOCX upload and return likely import bindings."""
+    membership = require_template_write_access(current_user, request=request)
+    _ = membership
+    controller = TemplateController(service=TemplateService())
+    return await controller.analyze_import_from_upload(file)
+
+
+@router.post(
+    "/import/inspect",
+    response_model=TemplateImportInspectionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def inspect_template_import_upload(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    file: UploadFile = File(...),
+) -> TemplateImportInspectionResponse:
+    """Inspect a DOCX upload for assisted templateization."""
+    membership = require_template_write_access(current_user, request=request)
+    _ = membership
+    controller = TemplateController(service=TemplateService())
+    return await controller.inspect_import_from_upload(file)
+
+
 @router.get("/{template_id}", response_model=TemplateDetailResponse)
 async def get_template(
     request: Request,
@@ -137,6 +178,88 @@ async def get_template(
     return await controller.get_template(
         organization_id=query.organization_id,
         template_id=template_id,
+    )
+
+
+@router.post(
+    "/{template_id}/import/analyze",
+    response_model=TemplateImportAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def analyze_stored_template_import(
+    request: Request,
+    template_id: UUID,
+    payload: TemplateImportAnalyzeStoredRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> TemplateImportAnalysisResponse:
+    """Analyze the current stored template version as an imported DOCX source."""
+    require_template_write_access(current_user, payload.organization_id, request=request)
+    controller = TemplateController(service=TemplateService())
+    return await controller.analyze_import_for_template(
+        organization_id=payload.organization_id,
+        template_id=template_id,
+    )
+
+
+@router.post(
+    "/{template_id}/import/inspect",
+    response_model=TemplateImportInspectionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def inspect_stored_template_import(
+    request: Request,
+    template_id: UUID,
+    payload: TemplateImportAnalyzeStoredRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> TemplateImportInspectionResponse:
+    """Inspect the current stored template version for assisted templateization."""
+    require_template_write_access(current_user, payload.organization_id, request=request)
+    controller = TemplateController(service=TemplateService())
+    return await controller.inspect_import_for_template(
+        organization_id=payload.organization_id,
+        template_id=template_id,
+    )
+
+
+@router.post(
+    "/{template_id}/import/confirm",
+    response_model=TemplateImportConfirmationResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def confirm_stored_template_import(
+    request: Request,
+    template_id: UUID,
+    payload: TemplateImportConfirmRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> TemplateImportConfirmationResponse:
+    """Persist confirmed bindings for an imported DOCX template."""
+    require_template_write_access(current_user, payload.organization_id, request=request)
+    controller = TemplateController(service=TemplateService())
+    return await controller.confirm_import_for_template(
+        organization_id=payload.organization_id,
+        template_id=template_id,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/{template_id}/import/templateize",
+    response_model=TemplateTemplateizationConfirmationResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def templateize_stored_template_import(
+    request: Request,
+    template_id: UUID,
+    payload: TemplateImportTemplateizeRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> TemplateTemplateizationConfirmationResponse:
+    """Persist manual paragraph-span selections for assisted templateization."""
+    require_template_write_access(current_user, payload.organization_id, request=request)
+    controller = TemplateController(service=TemplateService())
+    return await controller.templateize_import_for_template(
+        organization_id=payload.organization_id,
+        template_id=template_id,
+        payload=payload,
     )
 
 
