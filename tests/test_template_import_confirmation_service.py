@@ -7,7 +7,12 @@ from uuid import uuid4
 import pytest
 
 import app.services.template_service as template_service_module
-from app.dtos.template import TemplateImportConfirmRequest, TemplateImportTemplateizeRequest
+from app.dtos.template import (
+    TemplateImportBindingConfirmationItem,
+    TemplateImportConfirmRequest,
+    TemplateImportManualSelectionItem,
+    TemplateImportTemplateizeRequest,
+)
 from app.services.template_service import TemplateService
 from tests.test_docx_template_import_service import _build_import_docx
 
@@ -48,11 +53,11 @@ async def test_template_service_confirms_import_bindings_for_current_version(mon
         organization_id=organization_id,
         analysis_checksum=analysis.analysis_checksum,
         bindings=[
-            {
-                "candidate_id": candidate.id,
-                "binding_key": candidate.suggested_binding,
-                "label": candidate.label,
-            }
+            TemplateImportBindingConfirmationItem(
+                candidate_id=candidate.id,
+                binding_key=candidate.suggested_binding,
+                label=candidate.label,
+            )
             for candidate in analysis.candidates
         ],
     )
@@ -164,13 +169,13 @@ async def test_template_service_templateizes_manual_selections_for_current_versi
         organization_id=organization_id,
         inspection_checksum=inspection.inspection_checksum,
         selections=[
-            {
-                "paragraph_path": "body/p/0",
-                "fragment_start": 13,
-                "fragment_end": 23,
-                "binding_key": "client_name",
-                "label": "Client Name",
-            }
+            TemplateImportManualSelectionItem(
+                paragraph_path="body/p/0",
+                fragment_start=13,
+                fragment_end=23,
+                binding_key="client_name",
+                label="Client Name",
+            )
         ],
     )
 

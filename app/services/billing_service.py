@@ -488,7 +488,7 @@ class BillingService:
             )
 
         due_subscriptions = await subscription_repository.list_due_for_renewal(as_of=as_of)
-        billed_organization_ids: list[UUID] = []
+        billed_organization_ids_all: list[UUID] = []
         invoice_count = 0
         renewed_count = 0
         for subscription in due_subscriptions:
@@ -499,14 +499,14 @@ class BillingService:
             )
             _ = updated_subscription
             if created_invoices > 0:
-                billed_organization_ids.append(subscription.organization_id)
+                billed_organization_ids_all.append(subscription.organization_id)
                 invoice_count += created_invoices
                 renewed_count += created_invoices
 
         return BillingCycleRunResult(
             finalized_invoice_count=invoice_count,
             renewed_subscription_count=renewed_count,
-            billed_organization_ids=billed_organization_ids,
+            billed_organization_ids=billed_organization_ids_all,
         )
 
     async def _roll_subscription_forward_if_needed(
@@ -539,11 +539,12 @@ class BillingService:
                 plan_definition_id=next_plan_definition_id,
                 pending_plan_definition_id=None,
             )
-            current_subscription = await repository.get_by_organization_id(
+            refreshed_subscription = await repository.get_by_organization_id(
                 current_subscription.organization_id
             )
-            if current_subscription is None:
+            if refreshed_subscription is None:
                 raise NotFoundError("Organization billing plan was not found after renewal.")
+            current_subscription = refreshed_subscription
 
         return current_subscription, invoice_count
 

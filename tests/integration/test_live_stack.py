@@ -31,7 +31,7 @@ def build_docx_fixture(*document_text: str) -> bytes:
     return buffer.getvalue()
 
 
-def build_assisted_templateization_docx() -> tuple[bytes, dict[str, str], dict[str, dict[str, int | str]]]:
+def build_assisted_templateization_docx() -> tuple[bytes, dict[str, str], dict[str, dict[str, object]]]:
     """Build a narrative DOCX fixture plus deterministic selection spans."""
     document = Document()
     document.add_paragraph("Отчет по учебной практике")

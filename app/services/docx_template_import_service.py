@@ -361,8 +361,12 @@ class DocxTemplateImportService:
             location = (target.path, match.start("raw"), match.end("raw"))
             if location in seen_locations:
                 continue
-            label = self._derive_blank_label(target=target, text=text, start=match.start("raw"))
-            if not label:
+            blank_label = self._derive_blank_label(
+                target=target,
+                text=text,
+                start=match.start("raw"),
+            )
+            if not blank_label:
                 continue
             candidates.append(
                 self._build_candidate(
@@ -370,8 +374,8 @@ class DocxTemplateImportService:
                     raw_fragment=match.group("raw"),
                     start=match.start("raw"),
                     end=match.end("raw"),
-                    label=label,
-                    binding_key=self._binding_key_from_label(label),
+                    label=blank_label,
+                    binding_key=self._binding_key_from_label(blank_label),
                     detection_kind="blank_span",
                     confidence=0.72 if target.table_header_label else 0.64,
                 )

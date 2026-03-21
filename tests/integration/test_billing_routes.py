@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -60,15 +61,20 @@ def test_admin_billing_routes_return_expected_payloads(
         _ = session
         assert organization_id == authenticated_membership.organization_id
         return BillingSnapshot(
-            plan=starter_plan,
-            subscription=SimpleNamespace(
+            plan=cast(Any, starter_plan),
+            subscription=cast(
+                Any,
+                SimpleNamespace(
                 organization_id=organization_id,
                 status="active",
                 current_period_start=date(2026, 3, 1),
                 current_period_end=date(2026, 4, 1),
                 pending_plan=growth_plan,
+                ),
             ),
-            usage_meter=SimpleNamespace(
+            usage_meter=cast(
+                Any,
+                SimpleNamespace(
                 period_start=date(2026, 3, 1),
                 period_end=date(2026, 4, 1),
                 generation_count=12,
@@ -76,6 +82,7 @@ def test_admin_billing_routes_return_expected_payloads(
                 template_count=4,
                 user_count=2,
                 premium_feature_usage={"signature_requests": 1},
+                ),
             ),
         )
 
@@ -113,15 +120,20 @@ def test_admin_billing_routes_return_expected_payloads(
         assert organization_id == authenticated_membership.organization_id
         assert target_plan_code == "growth"
         return BillingSnapshot(
-            plan=starter_plan,
-            subscription=SimpleNamespace(
+            plan=cast(Any, starter_plan),
+            subscription=cast(
+                Any,
+                SimpleNamespace(
                 organization_id=organization_id,
                 status="active",
                 current_period_start=date(2026, 3, 1),
                 current_period_end=date(2026, 4, 1),
                 pending_plan=growth_plan,
+                ),
             ),
-            usage_meter=SimpleNamespace(
+            usage_meter=cast(
+                Any,
+                SimpleNamespace(
                 period_start=date(2026, 3, 1),
                 period_end=date(2026, 4, 1),
                 generation_count=12,
@@ -129,6 +141,7 @@ def test_admin_billing_routes_return_expected_payloads(
                 template_count=4,
                 user_count=2,
                 premium_feature_usage={},
+                ),
             ),
         )
 

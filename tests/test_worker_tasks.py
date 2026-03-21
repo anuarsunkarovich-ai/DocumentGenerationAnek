@@ -188,10 +188,11 @@ def test_run_billing_cycle_returns_summary() -> None:
             )
 
     result = worker_tasks._run_billing_cycle(service=FakeService())
+    billed_ids = cast(list[str], result["billed_organization_ids"])
 
     assert result["finalized_invoice_count"] == 2
     assert result["renewed_subscription_count"] == 2
-    assert len(result["billed_organization_ids"]) == 2
+    assert len(billed_ids) == 2
 
 
 @pytest.mark.anyio
@@ -904,6 +905,6 @@ async def test_document_generation_service_processes_imported_docx_job(monkeypat
     assert rendered.tables[0].rows[1].cells[1].text == "1500 USD"
     assert any(
         event["action"] == generation_module.AuditAction.DOCUMENT_JOB_COMPLETED
-        and event["payload"]["generation_mode"] == "docx_import"
+        and cast(dict[str, object], event["payload"]).get("generation_mode") == "docx_import"
         for event in audit_events
     )
