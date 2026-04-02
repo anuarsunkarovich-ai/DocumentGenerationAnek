@@ -1,0 +1,25 @@
+services:
+  api:
+    env_file:
+      - .env.example
+      - .env.tunnel
+    environment:
+      STORAGE__PUBLIC_ENDPOINT: ${STORAGE__PUBLIC_ENDPOINT}
+      STORAGE__PUBLIC_SECURE: ${STORAGE__PUBLIC_SECURE:-true}
+      APP__CORS_ORIGINS: ${APP__CORS_ORIGINS:-["http://localhost:5173"]}
+
+  worker:
+    env_file:
+      - .env.example
+      - .env.tunnel
+    environment:
+      STORAGE__PUBLIC_ENDPOINT: ${STORAGE__PUBLIC_ENDPOINT}
+      STORAGE__PUBLIC_SECURE: ${STORAGE__PUBLIC_SECURE:-true}
+
+  scheduler:
+    env_file:
+      - .env.example
+      - .env.tunnel
+    environment:
+      STORAGE__PUBLIC_ENDPOINT: ${STORAGE__PUBLIC_ENDPOINT}
+      STORAGE__PUBLIC_SECURE: ${STORAGE__PUBLIC_SECURE:-true}
